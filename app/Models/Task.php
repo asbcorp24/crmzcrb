@@ -18,6 +18,8 @@ class Task extends Model
     public function comments(): HasMany { return $this->hasMany(TaskComment::class)->latest(); }
     public function events(): HasMany { return $this->hasMany(TaskEvent::class)->latest(); }
     public function attachments(): HasMany { return $this->hasMany(TaskAttachment::class)->latest(); }
+    public function checklistItems(): HasMany { return $this->hasMany(TaskChecklistItem::class)->orderBy('sort_order'); }
+    public function deadlineChanges(): HasMany { return $this->hasMany(TaskDeadlineChange::class)->latest(); }
 
     public function getIsOverdueAttribute(): bool
     {
