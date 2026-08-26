@@ -6,6 +6,7 @@ use App\Models\CrmNotification;
 use App\Models\Plan;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\AccessService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -13,21 +14,24 @@ class PlanController extends Controller
 {
     public function page(Request $request)
     {
-        $users = $request->user()->isManager()
-            ? User::where('is_active', true)->orderBy('last_name')->orderBy('first_name')->get()
-            : collect([$request->user()]);
-
+        $ids = app(AccessService::class)->userIds($request->user(), true);
+        $users = User::whereIn('id', $ids)->where('is_active', true)->orderBy('last_name')->orderBy('first_name')->get();
         return view('plans.index', compact('users'));
     }
 
     public function index(Request $request)
     {
-        $q = Plan::with(['user.department','creator','tasks']);
+        $user = $request->user();
+        $ids = app(AccessService::class)->userIds($user, true);
+        $q = Plan::with(['user.department','creator','tasks'])
+            ->where(function ($w) use ($ids, $user) {
+                $w->whereIn('user_id', $ids)->orWhere('created_by', $user->id);
+            });
 
-        if (!$request->user()->isManager()) {
-            $q->where('user_id', $request->user()->id);
-        } elseif ($request->filled('user_id')) {
-            $q->where('user_id', $request->integer('user_id'));
+        if ($request->filled('user_id')) {
+            $userId = $request->integer('user_id');
+            abort_unless($ids->contains($userId), 403);
+            $q->where('user_id', $userId);
         }
 
         if ($request->filled('status')) $q->where('status', $request->status);
@@ -45,44 +49,41 @@ class PlanController extends Controller
             $plan->progress = $this->calculateProgress($plan);
             return $plan;
         });
-
         return response()->json($plans);
     }
 
     public function store(Request $request)
     {
         $data = $this->validated($request);
-
-        if (!$request->user()->isManager() && (int) $data['user_id'] !== $request->user()->id) {
-            abort(403);
-        }
+        $ids = app(AccessService::class)->userIds($request->user(), true);
+        abort_unless($ids->contains((int)$data['user_id']), 403);
+        if (!$request->user()->isManager()) abort_unless((int)$data['user_id'] === (int)$request->user()->id, 403);
 
         $data['created_by'] = $request->user()->id;
         $plan = Plan::create($data);
-
         return response()->json(['ok' => true, 'plan' => $plan->load(['user.department','creator'])], 201);
     }
 
     public function update(Request $request, Plan $plan)
     {
-        $user = $request->user();
-        abort_unless($user->isManager() || $plan->user_id === $user->id || $plan->created_by === $user->id, 403);
-
+        $this->authorizePlanManage($request, $plan);
         $data = $this->validated($request, true);
-        if (!$user->isManager() && isset($data['user_id']) && (int) $data['user_id'] !== $user->id) abort(403);
+
+        if (isset($data['user_id'])) {
+            $ids = app(AccessService::class)->userIds($request->user(), true);
+            abort_unless($ids->contains((int)$data['user_id']), 403);
+            if (!$request->user()->isManager()) abort_unless((int)$data['user_id'] === (int)$request->user()->id, 403);
+        }
 
         $plan->update($data);
         $plan->progress = $this->calculateProgress($plan->fresh('tasks'));
         $plan->save();
-
         return response()->json(['ok' => true, 'plan' => $plan->fresh()->load(['user.department','creator','tasks'])]);
     }
 
     public function addTask(Request $request, Plan $plan)
     {
-        $user = $request->user();
-        abort_unless($user->isManager() || $plan->user_id === $user->id, 403);
-
+        $this->authorizePlanManage($request, $plan);
         $data = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -93,7 +94,7 @@ class PlanController extends Controller
         $task = Task::create([
             'plan_id' => $plan->id,
             'assigned_to' => $plan->user_id,
-            'created_by' => $user->id,
+            'created_by' => $request->user()->id,
             'title' => $data['title'],
             'description' => $data['description'] ?? null,
             'priority' => $data['priority'],
@@ -102,7 +103,7 @@ class PlanController extends Controller
             'progress' => 0,
         ]);
 
-        if ($task->assigned_to !== $user->id) {
+        if ($task->assigned_to !== $request->user()->id) {
             CrmNotification::create([
                 'user_id' => $task->assigned_to,
                 'task_id' => $task->id,
@@ -115,8 +116,15 @@ class PlanController extends Controller
 
         $plan->progress = $this->calculateProgress($plan->fresh('tasks'));
         $plan->save();
-
         return response()->json(['ok' => true, 'task' => $task, 'plan_progress' => $plan->progress], 201);
+    }
+
+    private function authorizePlanManage(Request $request, Plan $plan): void
+    {
+        $user = $request->user();
+        if ($user->isAdmin() || (int)$plan->created_by === (int)$user->id || (int)$plan->user_id === (int)$user->id) return;
+        $owner = User::find($plan->user_id);
+        abort_unless($owner && app(AccessService::class)->canManageUser($user, $owner), 403);
     }
 
     private function validated(Request $request, bool $partial = false): array
@@ -137,6 +145,6 @@ class PlanController extends Controller
     {
         $tasks = $plan->tasks;
         if ($tasks->isEmpty()) return (int) $plan->progress;
-        return (int) round($tasks->avg(fn (Task $task) => $task->status === 'completed' ? 100 : (int) $task->progress));
+        return (int) round($tasks->avg(fn (Task $task) => $task->status === 'completed' ? 100 : (int)$task->progress));
     }
 }
