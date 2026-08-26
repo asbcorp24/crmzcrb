@@ -94,7 +94,7 @@ class ReportController extends Controller
     private function tasksReport(Request $request,$from,$to): array
     {
         $tasks=$this->taskQuery($request,$from,$to)->orderBy('due_at')->get();
-        $rows=$tasks->map(function(Task $t){$reason=$t->overdueReasons->first();return ['id'=>$t->id,'employee'=>$t->assignee?->full_name,'department'=>$t->assignee?->department?->name,'title'=>$t->title,'status'=>$this->statusName($t->status),'priority'=>$this->priorityName($t->priority),'progress'=>$t->progress.'%','due_at'=>$t->due_at?->format('d.m.Y H:i'),'completed_at'=>$t->completed_at?->format('d.m.Y H:i'),'overdue'=>$t->is_overdue?'Да':'Нет','overdue_reason'=>$reason?$this->overdueReasonName($reason->reason_type).($reason->comment?': '.$reason->comment:''):'' ];});
+        $rows=$tasks->map(function(Task $t){$reason=$t->overdueReasons->first();return ['id'=>$t->id,'employee'=>$t->assignee?->full_name,'department'=>$t->assignee?->department?->name,'title'=>$t->title,'status'=>$this->statusName($t->status),'priority'=>$this->priorityName($t->priority),'progress'=>$t->progress.'%','due_at'=>$t->due_at?->format('d.m.Y H:i'),'completed_at'=>$t->completed_at?->format('d.m.Y H:i'),'overdue'=>$t->is_overdue?'Да':'Нет','overdue_reason'=>$reason?$this->overdueReasonName($reason->reason_code).($reason->comment?': '.$reason->comment:''):'' ];});
         return $this->pack('Исполнение задач',['ID','Сотрудник','Подразделение','Задача','Статус','Приоритет','Прогресс','Срок','Выполнено','Просрочено','Причина просрочки'],['id','employee','department','title','status','priority','progress','due_at','completed_at','overdue','overdue_reason'],$rows,['Всего задач'=>$tasks->count(),'Выполнено'=>$tasks->where('status','completed')->count(),'На проверке'=>$tasks->where('status','review')->count(),'Просрочено'=>$tasks->filter(fn($t)=>$t->is_overdue)->count()]);
     }
 
@@ -128,5 +128,5 @@ class ReportController extends Controller
     private function pack(string $title,array $headers,array $keys,Collection $rows,array $summary): array { return compact('title','headers','keys','rows','summary'); }
     private function statusName(string $s): string { return ['new'=>'Новая','in_progress'=>'В работе','review'=>'На проверке','completed'=>'Выполнено','cancelled'=>'Отменено'][$s]??$s; }
     private function priorityName(string $p): string { return ['low'=>'Низкий','normal'=>'Обычный','high'=>'Высокий','critical'=>'Критический'][$p]??$p; }
-    private function overdueReasonName(string $r): string { return ['waiting_data'=>'Ожидаю данные','technical'=>'Техническая проблема','dependency'=>'Зависимость от другого подразделения','workload'=>'Высокая загрузка','other'=>'Другое'][$r]??$r; }
+    private function overdueReasonName(?string $r): string { return ['waiting_data'=>'Ожидаю данные','technical'=>'Техническая проблема','dependency'=>'Зависимость от другого подразделения','workload'=>'Высокая загрузка','other'=>'Другое'][$r]??($r ?: 'Не указана'); }
 }
