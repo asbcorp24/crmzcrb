@@ -28,7 +28,7 @@ class MeetingController extends Controller
     public function index(Request $request)
     {
         abort_unless($request->user()->isManager(), 403);
-        $q = Meeting::with(['chairman','secretary','creator','items.assignee','items.task']);
+        $q = Meeting::with(['chairman','secretary','creator','items.assignee','items.task.assignee.department']);
         if (!$request->user()->isAdmin()) $q->where('created_by',$request->user()->id);
         if ($request->filled('status')) $q->where('status',$request->status);
         if ($request->filled('q')) $q->where('title','like','%'.$request->q.'%');
@@ -38,7 +38,9 @@ class MeetingController extends Controller
     public function show(Request $request, Meeting $meeting)
     {
         $this->authorizeMeeting($request,$meeting);
-        return response()->json($meeting->load(['chairman','secretary','creator','participants.department','items.assignee.department','items.task']));
+        return response()->json($meeting->load([
+            'chairman','secretary','creator','participants.department','items.assignee.department','items.task.assignee.department'
+        ]));
     }
 
     public function store(Request $request)
@@ -65,7 +67,7 @@ class MeetingController extends Controller
             'participants'=>'nullable|array','participants.*'=>'integer|exists:users,id'
         ]);
         DB::transaction(function() use($meeting,$data){if(array_key_exists('participants',$data)){$p=$data['participants'];unset($data['participants']);$meeting->participants()->sync($p);} $meeting->update($data);});
-        return response()->json(['ok'=>true,'meeting'=>$meeting->fresh()->load(['chairman','secretary','participants','items.assignee','items.task'])]);
+        return response()->json(['ok'=>true,'meeting'=>$meeting->fresh()->load(['chairman','secretary','participants','items.assignee','items.task.assignee.department'])]);
     }
 
     public function addItem(Request $request, Meeting $meeting)
@@ -89,7 +91,7 @@ class MeetingController extends Controller
             if((int)$data['assigned_to']!==$request->user()->id) CrmNotification::create(['user_id'=>$data['assigned_to'],'task_id'=>$task->id,'type'=>'task_assigned','title'=>'Новое поручение по протоколу','body'=>$meeting->title.': '.$data['instruction'],'url'=>route('tasks.page',['task'=>$task->id],false)]);
             return $item;
         });
-        return response()->json(['ok'=>true,'item'=>$item->load(['assignee','task'])],201);
+        return response()->json(['ok'=>true,'item'=>$item->load(['assignee','task.assignee.department'])],201);
     }
 
     public function close(Request $request, Meeting $meeting)
