@@ -78,6 +78,46 @@ class TaskController extends Controller
         return response()->json(['ok'=>true,'comment'=>$comment->load('user')], 201);
     }
 
+    public function dashboardComplete(Request $request, Task $task)
+    {
+        abort_unless($task->assigned_to === $request->user()->id, 403);
+        abort_if(in_array($task->status, ['completed','cancelled'], true), 422, 'Задача уже закрыта');
+        abort_if($task->status === 'review', 422, 'Задача уже отправлена на проверку');
+
+        $data = $request->validate(['comment'=>'nullable|string|max:5000']);
+        $message = trim((string)($data['comment'] ?? ''));
+        $from = $task->status;
+
+        if ($task->created_by === $request->user()->id) {
+            $task->update([
+                'status' => 'completed',
+                'progress' => 100,
+                'started_at' => $task->started_at ?: now(),
+                'completed_at' => now(),
+                'result' => $message !== '' ? $message : ($task->result ?: 'Выполнено'),
+            ]);
+            if ($message !== '') TaskComment::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'body'=>$message]);
+            $this->event($task, $request->user()->id, 'completed_self', $from, 'completed', $message !== '' ? $message : 'Личная задача выполнена');
+            return response()->json(['ok'=>true,'mode'=>'completed','task'=>$task->fresh()]);
+        }
+
+        abort_if($message === '', 422, 'Перед отправкой руководителю укажите краткий комментарий о выполнении');
+        $task->update([
+            'status' => 'review',
+            'progress' => 100,
+            'started_at' => $task->started_at ?: now(),
+            'completed_at' => null,
+            'result' => $message,
+        ]);
+        TaskComment::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'body'=>'Отчёт сотрудника: '.$message]);
+        $this->event($task, $request->user()->id, 'submitted_for_review', $from, 'review', $message);
+        $task->loadMissing('assignee');
+        $recipients = array_unique(array_filter([$task->created_by, $task->assignee?->manager_id]));
+        foreach ($recipients as $userId) if ((int)$userId !== $request->user()->id) $this->notify((int)$userId, $task, 'task_review', 'Задача ожидает проверки', $task->title);
+
+        return response()->json(['ok'=>true,'mode'=>'review','task'=>$task->fresh()]);
+    }
+
     public function submitReview(Request $request, Task $task)
     {
         abort_unless($task->assigned_to === $request->user()->id, 403);
