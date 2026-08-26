@@ -35,6 +35,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/ajax/tasks', [TaskController::class, 'store'])->name('tasks.store');
     Route::patch('/ajax/tasks/{task}', [TaskController::class, 'update'])->name('tasks.update');
     Route::post('/ajax/tasks/{task}/comments', [TaskController::class, 'comment'])->name('tasks.comments.store');
+    Route::post('/ajax/tasks/{task}/dashboard-complete', [TaskController::class, 'dashboardComplete'])->name('tasks.dashboard-complete');
     Route::post('/ajax/tasks/{task}/submit-review', [TaskController::class, 'submitReview'])->name('tasks.submit-review');
     Route::post('/ajax/tasks/{task}/accept', [TaskController::class, 'accept'])->name('tasks.accept');
     Route::post('/ajax/tasks/{task}/reject', [TaskController::class, 'reject'])->name('tasks.reject');
