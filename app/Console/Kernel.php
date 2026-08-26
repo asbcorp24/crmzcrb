@@ -10,6 +10,7 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         $schedule->command('crm:deadlines')->dailyAt('08:00')->withoutOverlapping();
+        $schedule->command('crm:recurring-tasks')->hourly()->withoutOverlapping();
     }
 
     protected function commands(): void
