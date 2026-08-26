@@ -10,6 +10,7 @@ use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\MeetingController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PlanController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\StaffingController;
 use App\Http\Controllers\TaskAttachmentController;
 use App\Http\Controllers\TaskController;
@@ -76,6 +77,11 @@ Route::middleware('auth')->group(function () {
     Route::patch('/ajax/meetings/{meeting}', [MeetingController::class, 'update'])->name('meetings.update');
     Route::post('/ajax/meetings/{meeting}/items', [MeetingController::class, 'addItem'])->name('meetings.items.store');
     Route::post('/ajax/meetings/{meeting}/close', [MeetingController::class, 'close'])->name('meetings.close');
+
+    Route::get('/reports', [ReportController::class, 'page'])->name('reports.page');
+    Route::get('/ajax/reports', [ReportController::class, 'data'])->name('reports.data');
+    Route::get('/reports/export/csv', [ReportController::class, 'csv'])->name('reports.csv');
+    Route::get('/reports/print', [ReportController::class, 'print'])->name('reports.print');
 
     Route::get('/plans', [PlanController::class, 'page'])->name('plans.page');
     Route::get('/ajax/plans', [PlanController::class, 'index'])->name('plans.index');
