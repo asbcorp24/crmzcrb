@@ -13,7 +13,7 @@ class DashboardController extends Controller
     {
         $user = $request->user();
 
-        $myTasks = Task::with(['creator','plan','comments.user'])
+        $myTasks = Task::with(['creator','plan','comments.user','overdueReasons.user'])
             ->where('assigned_to', $user->id)
             ->where(function ($q) {
                 $q->whereNotIn('status', ['completed','cancelled'])
