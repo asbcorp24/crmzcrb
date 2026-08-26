@@ -8,24 +8,29 @@ use App\Models\Plan;
 use App\Models\Task;
 use App\Models\TaskEvent;
 use App\Models\User;
+use App\Services\AccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 
 class EmployeeController extends Controller
 {
-    public function page()
+    public function page(Request $request)
     {
+        $access = app(AccessService::class);
+        $ids = $access->userIds($request->user(), true);
+        $departmentIds = $access->departmentIds($request->user());
+
         return view('employees.index', [
-            'departments' => Department::where('is_active', true)->orderBy('name')->get(),
-            'managers' => User::whereIn('role', ['admin','manager'])->where('is_active', true)->orderBy('last_name')->get(),
+            'departments' => Department::whereIn('id', $departmentIds)->where('is_active', true)->orderBy('name')->get(),
+            'managers' => User::whereIn('id', $ids)->whereIn('role', ['admin','manager'])->where('is_active', true)->orderBy('last_name')->get(),
         ]);
     }
 
     public function profile(Request $request, User $employee)
     {
-        $viewer = $request->user();
-        abort_unless($viewer->id === $employee->id || $viewer->isManager(), 403);
+        $access = app(AccessService::class);
+        abort_unless($access->canViewUser($request->user(), $employee), 403);
 
         $employee->load(['department','manager','subordinates']);
 
@@ -74,7 +79,9 @@ class EmployeeController extends Controller
 
     public function index(Request $request)
     {
-        $q = User::with(['department','manager']);
+        $access = app(AccessService::class);
+        $ids = $access->userIds($request->user(), true);
+        $q = User::with(['department','manager'])->whereIn('id', $ids);
         if ($request->filled('department_id')) $q->where('department_id', $request->integer('department_id'));
         if ($request->filled('role')) $q->where('role', $request->role);
         if ($request->filled('q')) {
@@ -92,6 +99,10 @@ class EmployeeController extends Controller
     {
         abort_unless($request->user()->isManager(), 403);
         $data = $this->validated($request);
+        if (!$request->user()->isAdmin()) {
+            abort_unless((int)($data['manager_id'] ?? 0) === (int)$request->user()->id, 403, 'Руководитель может создавать только непосредственных подчинённых');
+            abort_if(($data['role'] ?? 'employee') === 'admin', 403);
+        }
         $data['password'] = Hash::make($request->input('password', 'ChangeMe123!'));
         $user = User::create($data);
         return response()->json(['ok'=>true,'user'=>$user->load(['department','manager'])], 201);
@@ -99,8 +110,16 @@ class EmployeeController extends Controller
 
     public function update(Request $request, User $employee)
     {
-        abort_unless($request->user()->isManager(), 403);
+        $access = app(AccessService::class);
+        abort_unless($request->user()->isManager() && ($request->user()->isAdmin() || $access->canManageUser($request->user(), $employee)), 403);
         $data = $this->validated($request, $employee->id);
+        if (!$request->user()->isAdmin()) {
+            abort_if(($data['role'] ?? $employee->role) === 'admin', 403);
+            if (array_key_exists('manager_id', $data) && $data['manager_id']) {
+                $allowedManagers = $access->userIds($request->user(), true);
+                abort_unless($allowedManagers->contains((int)$data['manager_id']), 403, 'Нельзя назначить руководителя вне доступной иерархии');
+            }
+        }
         if ($request->filled('password')) $data['password'] = Hash::make($request->password);
         $employee->update($data);
         return response()->json(['ok'=>true,'user'=>$employee->fresh()->load(['department','manager'])]);
