@@ -49,9 +49,10 @@ class TaskController extends Controller
         $data = $request->validate([
             'plan_id'=>'nullable|exists:plans,id','assigned_to'=>'required|exists:users,id','title'=>'required|string|max:255',
             'description'=>'nullable|string','priority'=>['required',Rule::in(['low','normal','high','critical'])],
-            'due_at'=>'nullable|date','status'=>['nullable',Rule::in(['new','in_progress','review','completed','cancelled'])]
+            'due_at'=>'nullable|date'
         ]);
         $data['created_by'] = $request->user()->id;
+        $data['status'] = 'new';
         $task = Task::create($data);
         $this->event($task, $request->user()->id, 'created', null, $task->status, 'Задача создана');
         if ($task->assigned_to !== $request->user()->id) $this->notify($task->assigned_to, $task, 'task_assigned', 'Новая задача', $task->title);
@@ -73,6 +74,7 @@ class TaskController extends Controller
             $newDueAt = $data['due_at'] ? \Carbon\Carbon::parse($data['due_at']) : null;
             $changed = ($oldDueAt?->timestamp) !== ($newDueAt?->timestamp);
             if ($changed) {
+                abort_unless($request->user()->isManager() || $task->created_by === $request->user()->id, 403);
                 $reason = trim((string)($data['deadline_reason'] ?? ''));
                 abort_if(mb_strlen($reason) < 3, 422, 'При изменении срока обязательно укажите причину');
                 TaskDeadlineChange::create([
@@ -96,6 +98,7 @@ class TaskController extends Controller
     public function addChecklistItem(Request $request, Task $task)
     {
         $this->authorizeTask($request, $task);
+        abort_unless($request->user()->isManager() || $task->created_by === $request->user()->id, 403);
         abort_if(in_array($task->status,['completed','cancelled'],true),422,'Нельзя менять чек-лист закрытой задачи');
         $data=$request->validate(['title'=>'required|string|max:255']);
         $item=TaskChecklistItem::create([
@@ -126,6 +129,7 @@ class TaskController extends Controller
     public function changeDeadline(Request $request, Task $task)
     {
         $this->authorizeTask($request, $task);
+        abort_unless($request->user()->isManager() || $task->created_by === $request->user()->id, 403);
         $data=$request->validate(['due_at'=>'nullable|date','reason'=>'required|string|min:3|max:5000']);
         $old=$task->due_at?->copy();
         $new=$data['due_at']?\Carbon\Carbon::parse($data['due_at']):null;
