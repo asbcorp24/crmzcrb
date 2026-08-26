@@ -30,7 +30,6 @@ class DemoSeeder extends Seeder
         DB::transaction(function () {
             $password = Hash::make('Demo12345!');
 
-            // Организационная структура
             $administration = Department::updateOrCreate(
                 ['name' => 'Администрация'],
                 ['short_name'=>'Администрация','type'=>'administration','is_active'=>true,'sort_order'=>10]
@@ -52,10 +51,11 @@ class DemoSeeder extends Seeder
                 ['parent_id'=>$administration->id,'short_name'=>'ИТ','type'=>'service','is_active'=>true,'sort_order'=>50]
             );
 
-            // Пользователи. У всех демо-пользователей один пароль: Demo12345!
+            // Все демо-пользователи имеют пароль Demo12345!.
+            // Существующая учётная запись admin@zcrb.local намеренно не изменяется.
             $admin = User::updateOrCreate(
-                ['email'=>'admin@zcrb.local'],
-                ['department_id'=>$administration->id,'manager_id'=>null,'last_name'=>'Администратор','first_name'=>'Системы','middle_name'=>null,'position'=>'Администратор CRM','phone'=>'','role'=>'admin','is_active'=>true,'employment_date'=>now()->subYears(5)->toDateString(),'password'=>$password]
+                ['email'=>'demo.admin@zcrb.local'],
+                ['department_id'=>$administration->id,'manager_id'=>null,'last_name'=>'Демо','first_name'=>'Администратор','middle_name'=>'CRM','position'=>'Демонстрационный администратор','phone'=>'','role'=>'admin','is_active'=>true,'employment_date'=>now()->subYears(5)->toDateString(),'password'=>$password]
             );
             $chief = User::updateOrCreate(
                 ['email'=>'chief.demo@zcrb.local'],
@@ -82,7 +82,6 @@ class DemoSeeder extends Seeder
                 ['department_id'=>$it->id,'manager_id'=>$chief->id,'last_name'=>'Орлов','first_name'=>'Дмитрий','middle_name'=>'Игоревич','position'=>'Инженер-программист','phone'=>'+7 900 100-00-06','role'=>'employee','is_active'=>true,'employment_date'=>now()->subYear()->toDateString(),'password'=>$password]
             );
 
-            // Справочник должностей и штатное расписание
             $positions = [
                 'head' => Position::updateOrCreate(['code'=>'DEMO-HEAD'], ['name'=>'Заведующий отделением','category'=>'Руководители','is_active'=>true]),
                 'doctor' => Position::updateOrCreate(['code'=>'DEMO-DOCTOR'], ['name'=>'Врач-хирург','category'=>'Врачи','is_active'=>true]),
@@ -93,10 +92,10 @@ class DemoSeeder extends Seeder
 
             $staffRows = [
                 [$reception, $positions['head'], 1.00, $headReception],
-                [$reception, $positions['doctor'], 2.00, $surgeon], // одна ставка останется вакантной
+                [$reception, $positions['doctor'], 2.00, $surgeon],
                 [$reception, $positions['nurse'], 1.00, $nurse],
-                [$statistics, $positions['stat'], 1.50, $stat], // 0.5 ставки вакантно
-                [$it, $positions['it'], 2.00, $itUser], // одна ставка вакантна
+                [$statistics, $positions['stat'], 1.50, $stat],
+                [$it, $positions['it'], 2.00, $itUser],
             ];
             foreach ($staffRows as [$department, $position, $rate, $employee]) {
                 $row = StaffingPosition::updateOrCreate(
@@ -109,7 +108,6 @@ class DemoSeeder extends Seeder
                 );
             }
 
-            // Планы
             $receptionPlan = Plan::updateOrCreate(
                 ['user_id'=>$headReception->id,'title'=>'[ДЕМО] План работы приёмного отделения'],
                 ['created_by'=>$chief->id,'description'=>'Месячный план организационных задач приёмного отделения.','period_start'=>now()->startOfMonth()->toDateString(),'period_end'=>now()->endOfMonth()->toDateString(),'period_type'=>'month','status'=>'active','progress'=>0]
@@ -119,7 +117,6 @@ class DemoSeeder extends Seeder
                 ['created_by'=>$chief->id,'description'=>'Сверка и подготовка управленческой отчётности за месяц.','period_start'=>now()->startOfMonth()->toDateString(),'period_end'=>now()->endOfMonth()->toDateString(),'period_type'=>'month','status'=>'active','progress'=>0]
             );
 
-            // Задачи с разными состояниями
             $completed = $this->task($receptionPlan, $chief, $headReception, '[ДЕМО] Обновить график дежурств', 'completed', 100, now()->subDays(4), 'normal', now()->subDays(3));
             $progress = $this->task($receptionPlan, $headReception, $surgeon, '[ДЕМО] Проверить маршрутизацию пациентов', 'in_progress', 60, now()->addDays(3), 'high');
             $review = $this->task($receptionPlan, $headReception, $nurse, '[ДЕМО] Актуализировать перечень оснащения', 'review', 100, now()->addDay(), 'normal');
@@ -127,7 +124,6 @@ class DemoSeeder extends Seeder
             $itTask = $this->task(null, $chief, $itUser, '[ДЕМО] Проверить резервное копирование CRM', 'new', 0, now()->addDays(2), 'critical');
             $personal = $this->task(null, $surgeon, $surgeon, '[ДЕМО] Подготовить предложения по улучшению маршрутизации', 'new', 0, now()->addDays(5), 'normal');
 
-            // Чек-лист и комментарии
             $this->checklist($progress, [
                 ['Проверить текущую схему маршрутизации', true, $surgeon],
                 ['Собрать замечания сотрудников', true, $surgeon],
@@ -147,16 +143,14 @@ class DemoSeeder extends Seeder
                 ['reason_code'=>'waiting_data','comment'=>'[ДЕМО] Ожидаются уточнённые данные от подразделения.']
             );
 
-            // Повторяющийся шаблон
             $template = TaskTemplate::updateOrCreate(
                 ['created_by'=>$headReception->id,'title'=>'[ДЕМО] Еженедельная проверка журнала'],
-                ['assigned_to'=>$nurse->id,'description'=>'Проверить заполнение журнала и сообщить о замечаниях.','priority'=>'normal','due_after_days'=>1,'recurrence'=>'weekly','recurrence_interval'=>1,'weekday'=>1,'day_of_month'=>null,'next_run_at'=>now()->next('Monday')->setTime(8,0),'is_active'=>true]
+                ['assigned_to'=>$nurse->id,'description'=>'Проверить заполнение журнала и сообщить о замечаниях.','priority'=>'normal','due_after_days'=>1,'recurrence'=>'weekly','recurrence_interval'=>1,'weekday'=>1,'day_of_month'=>null,'next_run_at'=>now()->next(1)->setTime(8,0),'is_active'=>true]
             );
             foreach (['Проверить полноту записей','Проверить подписи ответственных','Сообщить о выявленных замечаниях'] as $i => $title) {
                 TaskTemplateChecklistItem::updateOrCreate(['task_template_id'=>$template->id,'title'=>$title], ['sort_order'=>$i]);
             }
 
-            // Отпуск и замещение в ближайшем будущем
             $absence = EmployeeAbsence::updateOrCreate(
                 ['user_id'=>$surgeon->id,'type'=>'vacation','date_from'=>now()->addDays(7)->toDateString(),'date_to'=>now()->addDays(14)->toDateString()],
                 ['document_number'=>'ДЕМО-ОТП-01','comment'=>'[ДЕМО] Плановый отпуск','created_by'=>$headReception->id]
@@ -166,7 +160,6 @@ class DemoSeeder extends Seeder
                 ['comment'=>'[ДЕМО] Замещение на период отпуска','created_by'=>$chief->id]
             );
 
-            // Совещание и связанное поручение
             $meeting = Meeting::updateOrCreate(
                 ['title'=>'[ДЕМО] Еженедельное оперативное совещание','held_at'=>now()->startOfWeek()->addDays(1)->setTime(9,0)],
                 ['location'=>'Кабинет заместителя главного врача','chairman_id'=>$chief->id,'secretary_id'=>$stat->id,'created_by'=>$chief->id,'notes'=>'[ДЕМО] Сроки, просрочки, кадровая доступность и текущие поручения.','status'=>'active']
@@ -177,7 +170,6 @@ class DemoSeeder extends Seeder
                 ['instruction'=>'[ДЕМО] Проверить резервное копирование CRM и представить результат.','assigned_to'=>$itUser->id,'due_at'=>$itTask->due_at,'priority'=>'critical','task_id'=>$itTask->id,'created_by'=>$chief->id]
             );
 
-            // Несколько событий для истории задач
             foreach ([$completed,$progress,$review,$overdue,$itTask,$personal] as $task) {
                 TaskEvent::firstOrCreate(
                     ['task_id'=>$task->id,'user_id'=>$task->created_by,'type'=>'created','message'=>'[ДЕМО] Задача создана демонстрационным сидером'],
@@ -185,12 +177,11 @@ class DemoSeeder extends Seeder
                 );
             }
 
-            // Финальный пересчёт гарантирует корректные проценты планов даже после повторного запуска сидера.
             $receptionPlan->recalculateProgress();
             $statPlan->recalculateProgress();
         });
 
-        $this->command?->info('Демо-данные CRM созданы. Пароль демо-пользователей: Demo12345!');
+        $this->command?->info('Демо-данные CRM созданы. Пароль всех demo.* пользователей: Demo12345!');
     }
 
     private function task(?Plan $plan, User $creator, User $assignee, string $title, string $status, int $progress, $dueAt, string $priority, $completedAt = null): Task
