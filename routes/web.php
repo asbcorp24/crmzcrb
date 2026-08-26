@@ -80,6 +80,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/reports', [ReportController::class, 'page'])->name('reports.page');
     Route::get('/ajax/reports', [ReportController::class, 'data'])->name('reports.data');
+    Route::get('/reports/export/excel', [ReportController::class, 'excel'])->name('reports.excel');
     Route::get('/reports/export/csv', [ReportController::class, 'csv'])->name('reports.csv');
     Route::get('/reports/print', [ReportController::class, 'print'])->name('reports.print');
 
