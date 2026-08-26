@@ -122,9 +122,13 @@ class PlanController extends Controller
     private function authorizePlanManage(Request $request, Plan $plan): void
     {
         $user = $request->user();
-        if ($user->isAdmin() || (int)$plan->created_by === (int)$user->id || (int)$plan->user_id === (int)$user->id) return;
-        $owner = User::find($plan->user_id);
-        abort_unless($owner && app(AccessService::class)->canManageUser($user, $owner), 403);
+        if ($user->isAdmin() || (int)$plan->created_by === (int)$user->id) return;
+        if ((int)$plan->user_id === (int)$user->id && (int)$plan->created_by === (int)$user->id) return;
+        if ($user->isManager()) {
+            $owner = User::find($plan->user_id);
+            if ($owner && app(AccessService::class)->canManageUser($user, $owner)) return;
+        }
+        abort(403);
     }
 
     private function validated(Request $request, bool $partial = false): array
