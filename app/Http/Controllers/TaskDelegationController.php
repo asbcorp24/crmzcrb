@@ -7,6 +7,7 @@ use App\Models\Task;
 use App\Models\TaskDelegation;
 use App\Models\TaskEvent;
 use App\Models\User;
+use App\Services\AccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -14,21 +15,19 @@ class TaskDelegationController extends Controller
 {
     public function store(Request $request, Task $task)
     {
-        abort_unless($request->user()->isManager() || $task->created_by === $request->user()->id, 403);
+        abort_unless($this->canManageTask($request, $task), 403);
         abort_if(in_array($task->status, ['completed','cancelled'], true), 422, 'Закрытую задачу нельзя передать');
 
         $data = $request->validate([
-            'to_user_id'=>'required|exists:users,id|different:from_user_id',
+            'to_user_id'=>'required|exists:users,id',
             'reason'=>'required|string|min:3|max:5000',
         ]);
         $newUser = User::where('id', $data['to_user_id'])->where('is_active', true)->firstOrFail();
         $oldUserId = $task->assigned_to;
         abort_if($oldUserId === $newUser->id, 422, 'Этот сотрудник уже является исполнителем');
 
-        if (!$request->user()->isAdmin()) {
-            $allowed = $newUser->id === $request->user()->id || $newUser->manager_id === $request->user()->id;
-            abort_unless($allowed, 403);
-        }
+        $allowedIds = app(AccessService::class)->userIds($request->user(), true);
+        abort_unless($allowedIds->contains((int)$newUser->id), 403);
 
         DB::transaction(function() use ($task,$request,$data,$newUser,$oldUserId) {
             TaskDelegation::create([
@@ -53,9 +52,25 @@ class TaskDelegationController extends Controller
 
     public function history(Request $request, Task $task)
     {
-        $u=$request->user();
-        abort_unless($u->isManager() || $task->assigned_to===$u->id || $task->created_by===$u->id,403);
+        $this->authorizeTaskView($request, $task);
         return response()->json(TaskDelegation::with(['fromUser','toUser','delegatedByUser'])
             ->where('task_id',$task->id)->latest()->get());
+    }
+
+    private function authorizeTaskView(Request $request, Task $task): void
+    {
+        $user = $request->user();
+        if ((int)$task->assigned_to === (int)$user->id || (int)$task->created_by === (int)$user->id) return;
+        $ids = app(AccessService::class)->userIds($user, true);
+        abort_unless($user->isManager() && $ids->contains((int)$task->assigned_to), 403);
+    }
+
+    private function canManageTask(Request $request, Task $task): bool
+    {
+        $user = $request->user();
+        if ($user->isAdmin() || (int)$task->created_by === (int)$user->id) return true;
+        if (!$user->isManager()) return false;
+        $assignee = User::find($task->assigned_to);
+        return $assignee ? app(AccessService::class)->canManageUser($user, $assignee) : false;
     }
 }
