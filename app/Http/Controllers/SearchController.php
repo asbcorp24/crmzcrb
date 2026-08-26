@@ -50,10 +50,10 @@ class SearchController extends Controller
                 $items->push(['type'=>'Задача','title'=>$t->title,'subtitle'=>($t->assignee?->full_name ?: '').' · '.$this->statusName($t->status),'url'=>route('tasks.page',['task'=>$t->id],false),'icon'=>'bi-check2-square']);
             });
 
-        Plan::with('owner')->whereIn('user_id',$userIds)
+        Plan::with('user')->whereIn('user_id',$userIds)
             ->where(function($w) use($q){$w->where('title','like',"%{$q}%")->orWhere('description','like',"%{$q}%");})
             ->limit(10)->get()->each(function($p) use($items){
-                $items->push(['type'=>'План','title'=>$p->title,'subtitle'=>$p->owner?->full_name ?: '','url'=>route('plans.page',[],false).'?user_id='.$p->user_id,'icon'=>'bi-calendar3']);
+                $items->push(['type'=>'План','title'=>$p->title,'subtitle'=>$p->user?->full_name ?: '','url'=>route('plans.page',[],false).'?user_id='.$p->user_id,'icon'=>'bi-calendar3']);
             });
 
         if ($viewer->isManager()) {
