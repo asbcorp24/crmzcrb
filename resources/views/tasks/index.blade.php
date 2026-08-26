@@ -33,6 +33,6 @@ function rejectTask(){if(!currentTask)return;let m=$('#reviewMessage').val().tri
 function addComment(){if(!currentTask)return;let b=$('#commentBody').val().trim();if(!b)return;$.post(`{{ url('/ajax/tasks') }}/${currentTask.id}/comments`,{body:b}).done(()=>{$('#commentBody').val('');refreshCurrent()}).fail(showError)}
 function showError(x){alert(x.responseJSON?.message||'Ошибка выполнения операции')}
 $('#taskQ').on('input',()=>{clearTimeout(window.tt);window.tt=setTimeout(loadTasks,300)});$('#statusFilter,#priorityFilter,#assigneeFilter,#overdueFilter').on('change',loadTasks);$('#taskForm').on('submit',function(e){e.preventDefault();let d=Object.fromEntries(new FormData(this).entries());$.post('{{ route('tasks.store') }}',d).done(()=>{this.reset();bootstrap.Modal.getInstance(document.getElementById('taskModal')).hide();loadTasks()}).fail(x=>$('#taskError').removeClass('d-none').text(x.responseJSON?.message||'Ошибка создания'))});
-const qs=new URLSearchParams(window.location.search);if($('#assigneeFilter').length&&qs.get('assigned_to'))$('#assigneeFilter').val(qs.get('assigned_to'));loadTasks();
+const qs=new URLSearchParams(window.location.search);if($('#assigneeFilter').length&&qs.get('assigned_to'))$('#assigneeFilter').val(qs.get('assigned_to'));loadTasks();if(qs.get('task'))setTimeout(()=>openTask(qs.get('task')),150);
 </script>
 @endpush
