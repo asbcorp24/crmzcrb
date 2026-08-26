@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\ControlController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
@@ -22,6 +23,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/ajax/notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::post('/ajax/notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
     Route::post('/ajax/notifications/{notification}/read', [NotificationController::class, 'read'])->name('notifications.read');
+
+    Route::get('/calendar', [CalendarController::class, 'page'])->name('calendar.page');
+    Route::get('/ajax/calendar/events', [CalendarController::class, 'events'])->name('calendar.events');
 
     Route::get('/tasks', [TaskController::class, 'page'])->name('tasks.page');
     Route::get('/ajax/tasks', [TaskController::class, 'index'])->name('tasks.index');
