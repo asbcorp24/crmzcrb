@@ -6,11 +6,13 @@ use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\ControlController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
+use App\Http\Controllers\DepartmentDashboardController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\MeetingController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\SearchController;
 use App\Http\Controllers\StaffingController;
 use App\Http\Controllers\TaskAttachmentController;
 use App\Http\Controllers\TaskController;
@@ -27,6 +29,9 @@ Route::middleware('guest')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('/search', [SearchController::class, 'page'])->name('search.page');
+    Route::get('/ajax/search', [SearchController::class, 'ajax'])->name('search.ajax');
 
     Route::get('/ajax/notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::post('/ajax/notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
@@ -97,6 +102,7 @@ Route::middleware('auth')->group(function () {
     Route::patch('/ajax/employees/{employee}', [EmployeeController::class, 'update'])->name('employees.update');
 
     Route::get('/departments', [DepartmentController::class, 'page'])->name('departments.page');
+    Route::get('/departments/{department}/360', [DepartmentDashboardController::class, 'show'])->name('departments.show360');
     Route::get('/ajax/departments', [DepartmentController::class, 'index'])->name('departments.index');
     Route::post('/ajax/departments', [DepartmentController::class, 'store'])->name('departments.store');
     Route::patch('/ajax/departments/{department}', [DepartmentController::class, 'update'])->name('departments.update');
@@ -104,7 +110,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/staffing', [StaffingController::class, 'page'])->name('staffing.page');
     Route::get('/ajax/staffing/positions', [StaffingController::class, 'positions'])->name('staffing.positions');
     Route::post('/ajax/staffing/positions', [StaffingController::class, 'storePosition'])->name('staffing.positions.store');
-    Route::patch('/ajax/staffing/positions/{position}', [StaffingController::class, 'updatePosition'])->name('staffing.positions.update');
+    Route::patch('/ajax/staffing/positions/{position}', [StaffingController::class, 'updateRow'])->name('staffing.positions.update');
     Route::get('/ajax/staffing/rows', [StaffingController::class, 'rows'])->name('staffing.rows');
     Route::post('/ajax/staffing/rows', [StaffingController::class, 'storeRow'])->name('staffing.rows.store');
     Route::patch('/ajax/staffing/rows/{staffingPosition}', [StaffingController::class, 'updateRow'])->name('staffing.rows.update');
