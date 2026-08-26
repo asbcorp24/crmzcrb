@@ -16,13 +16,17 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
-
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('/tasks', [TaskController::class, 'page'])->name('tasks.page');
     Route::get('/ajax/tasks', [TaskController::class, 'index'])->name('tasks.index');
+    Route::get('/ajax/tasks/{task}', [TaskController::class, 'show'])->name('tasks.show');
     Route::post('/ajax/tasks', [TaskController::class, 'store'])->name('tasks.store');
     Route::patch('/ajax/tasks/{task}', [TaskController::class, 'update'])->name('tasks.update');
+    Route::post('/ajax/tasks/{task}/comments', [TaskController::class, 'comment'])->name('tasks.comments.store');
+    Route::post('/ajax/tasks/{task}/submit-review', [TaskController::class, 'submitReview'])->name('tasks.submit-review');
+    Route::post('/ajax/tasks/{task}/accept', [TaskController::class, 'accept'])->name('tasks.accept');
+    Route::post('/ajax/tasks/{task}/reject', [TaskController::class, 'reject'])->name('tasks.reject');
 
     Route::get('/plans', [PlanController::class, 'page'])->name('plans.page');
     Route::get('/ajax/plans', [PlanController::class, 'index'])->name('plans.index');
