@@ -15,6 +15,8 @@ class Task extends Model
     protected static function booted(): void
     {
         static::created(function (Task $task) {
+            Plan::recalculateById($task->plan_id);
+
             if (!$task->due_at || !$task->assigned_to || !$task->created_by) return;
             $date = $task->due_at->toDateString();
             $absence = EmployeeAbsence::where('user_id',$task->assigned_to)
@@ -36,6 +38,18 @@ class Task extends Model
                 'body'=>$body,
                 'url'=>route('tasks.page',['task'=>$task->id],false),
             ]);
+        });
+
+        static::updated(function (Task $task) {
+            $oldPlanId = (int) ($task->getOriginal('plan_id') ?? 0);
+            $newPlanId = (int) ($task->plan_id ?? 0);
+
+            if ($oldPlanId && $oldPlanId !== $newPlanId) Plan::recalculateById($oldPlanId);
+            if ($newPlanId) Plan::recalculateById($newPlanId);
+        });
+
+        static::deleted(function (Task $task) {
+            Plan::recalculateById($task->plan_id);
         });
     }
 
