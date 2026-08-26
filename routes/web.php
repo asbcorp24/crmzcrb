@@ -8,6 +8,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\DepartmentDashboardController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\HelpController;
 use App\Http\Controllers\MeetingController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PlanController;
@@ -29,6 +30,8 @@ Route::middleware('guest')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('/help/{section?}', [HelpController::class, 'page'])->name('help.page');
 
     Route::get('/search', [SearchController::class, 'page'])->name('search.page');
     Route::get('/ajax/search', [SearchController::class, 'ajax'])->name('search.ajax');
