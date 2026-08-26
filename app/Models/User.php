@@ -21,6 +21,8 @@ class User extends Authenticatable
     public function plans(): HasMany { return $this->hasMany(Plan::class); }
     public function assignedTasks(): HasMany { return $this->hasMany(Task::class, 'assigned_to'); }
     public function createdTasks(): HasMany { return $this->hasMany(Task::class, 'created_by'); }
+    public function assignments(): HasMany { return $this->hasMany(EmployeeAssignment::class); }
+    public function activeAssignments(): HasMany { return $this->hasMany(EmployeeAssignment::class)->whereNull('ended_at'); }
     public function isAdmin(): bool { return $this->role === 'admin'; }
     public function isManager(): bool { return in_array($this->role, ['admin','manager'], true); }
 }
