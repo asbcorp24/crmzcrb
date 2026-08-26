@@ -8,6 +8,7 @@ use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PlanController;
+use App\Http\Controllers\TaskAttachmentController;
 use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
 
@@ -36,6 +37,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/ajax/tasks/{task}/submit-review', [TaskController::class, 'submitReview'])->name('tasks.submit-review');
     Route::post('/ajax/tasks/{task}/accept', [TaskController::class, 'accept'])->name('tasks.accept');
     Route::post('/ajax/tasks/{task}/reject', [TaskController::class, 'reject'])->name('tasks.reject');
+
+    Route::post('/ajax/tasks/{task}/attachments', [TaskAttachmentController::class, 'store'])->name('tasks.attachments.store');
+    Route::get('/attachments/{attachment}/download', [TaskAttachmentController::class, 'download'])->name('attachments.download');
+    Route::delete('/ajax/attachments/{attachment}', [TaskAttachmentController::class, 'destroy'])->name('attachments.destroy');
 
     Route::get('/plans', [PlanController::class, 'page'])->name('plans.page');
     Route::get('/ajax/plans', [PlanController::class, 'index'])->name('plans.index');
