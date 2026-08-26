@@ -17,6 +17,7 @@ class Task extends Model
     public function assignee(): BelongsTo { return $this->belongsTo(User::class, 'assigned_to'); }
     public function comments(): HasMany { return $this->hasMany(TaskComment::class)->latest(); }
     public function events(): HasMany { return $this->hasMany(TaskEvent::class)->latest(); }
+    public function attachments(): HasMany { return $this->hasMany(TaskAttachment::class)->latest(); }
 
     public function getIsOverdueAttribute(): bool
     {
