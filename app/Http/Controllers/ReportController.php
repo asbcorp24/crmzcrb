@@ -6,6 +6,7 @@ use App\Models\Department;
 use App\Models\Meeting;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\AccessService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -16,8 +17,9 @@ class ReportController extends Controller
     public function page(Request $request)
     {
         abort_unless($request->user()->isManager(), 403);
+        $access = app(AccessService::class);
         $users = $this->accessibleUsers($request)->get();
-        $departments = Department::where('is_active', true)->orderBy('name')->get();
+        $departments = Department::whereIn('id',$access->departmentIds($request->user()))->where('is_active', true)->orderBy('name')->get();
         return view('reports.index', compact('users', 'departments'));
     }
 
@@ -118,7 +120,11 @@ class ReportController extends Controller
         return $this->pack('Исполнение протоколов совещаний',['Совещание','Дата','№','Поручение','Исполнитель','Подразделение','Срок','Статус','Прогресс','Просрочено'],['meeting','held_at','number','instruction','employee','department','due_at','status','progress','overdue'],$rows,['Совещаний'=>$meetings->count(),'Поручений'=>$rows->count(),'Просрочено'=>$rows->where('overdue','Да')->count()]);
     }
 
-    private function accessibleUsers(Request $request): Builder { return User::query()->where('is_active',true)->when(!$request->user()->isAdmin(),fn($q)=>$q->where(function($w)use($request){$w->where('id',$request->user()->id)->orWhere('manager_id',$request->user()->id);})); }
+    private function accessibleUsers(Request $request): Builder
+    {
+        $ids = app(AccessService::class)->userIds($request->user(), true);
+        return User::query()->where('is_active',true)->whereIn('id',$ids);
+    }
     private function pack(string $title,array $headers,array $keys,Collection $rows,array $summary): array { return compact('title','headers','keys','rows','summary'); }
     private function statusName(string $s): string { return ['new'=>'Новая','in_progress'=>'В работе','review'=>'На проверке','completed'=>'Выполнено','cancelled'=>'Отменено'][$s]??$s; }
     private function priorityName(string $p): string { return ['low'=>'Низкий','normal'=>'Обычный','high'=>'Высокий','critical'=>'Критический'][$p]??$p; }
