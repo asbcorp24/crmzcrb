@@ -20,6 +20,7 @@ class Task extends Model
     public function attachments(): HasMany { return $this->hasMany(TaskAttachment::class)->latest(); }
     public function checklistItems(): HasMany { return $this->hasMany(TaskChecklistItem::class)->orderBy('sort_order'); }
     public function deadlineChanges(): HasMany { return $this->hasMany(TaskDeadlineChange::class)->latest(); }
+    public function overdueReasons(): HasMany { return $this->hasMany(TaskOverdueReason::class)->latest(); }
 
     public function getIsOverdueAttribute(): bool
     {
