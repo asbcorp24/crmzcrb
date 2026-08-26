@@ -49,6 +49,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/ajax/plans/{plan}/tasks', [PlanController::class, 'addTask'])->name('plans.tasks.store');
 
     Route::get('/employees', [EmployeeController::class, 'page'])->name('employees.page');
+    Route::get('/employees/{employee}', [EmployeeController::class, 'profile'])->name('employees.profile');
     Route::get('/ajax/employees', [EmployeeController::class, 'index'])->name('employees.index');
     Route::post('/ajax/employees', [EmployeeController::class, 'store'])->name('employees.store');
     Route::patch('/ajax/employees/{employee}', [EmployeeController::class, 'update'])->name('employees.update');
