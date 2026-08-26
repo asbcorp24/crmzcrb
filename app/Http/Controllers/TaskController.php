@@ -9,6 +9,7 @@ use App\Models\TaskComment;
 use App\Models\TaskDeadlineChange;
 use App\Models\TaskEvent;
 use App\Models\User;
+use App\Services\AccessService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -16,17 +17,25 @@ class TaskController extends Controller
 {
     public function page(Request $request)
     {
-        $users = $request->user()->isManager()
-            ? User::where('is_active', true)->orderBy('last_name')->get()
-            : collect([$request->user()]);
+        $ids = app(AccessService::class)->userIds($request->user(), true);
+        $users = User::whereIn('id', $ids)->where('is_active', true)->orderBy('last_name')->orderBy('first_name')->get();
         return view('tasks.index', compact('users'));
     }
 
     public function index(Request $request)
     {
-        $q = Task::with(['assignee.department','creator','plan']);
-        if (!$request->user()->isManager()) $q->where('assigned_to', $request->user()->id);
-        if ($request->filled('assigned_to') && $request->user()->isManager()) $q->where('assigned_to', $request->integer('assigned_to'));
+        $user = $request->user();
+        $ids = app(AccessService::class)->userIds($user, true);
+        $q = Task::with(['assignee.department','creator','plan'])
+            ->where(function ($w) use ($ids, $user) {
+                $w->whereIn('assigned_to', $ids)->orWhere('created_by', $user->id);
+            });
+
+        if ($request->filled('assigned_to')) {
+            $assignedTo = $request->integer('assigned_to');
+            abort_unless($ids->contains($assignedTo), 403);
+            $q->where('assigned_to', $assignedTo);
+        }
         if ($request->filled('status')) $q->where('status', $request->status);
         if ($request->filled('priority')) $q->where('priority', $request->priority);
         if ($request->filled('q')) $q->where(function($w) use ($request){ $w->where('title','like','%'.$request->q.'%')->orWhere('description','like','%'.$request->q.'%'); });
@@ -45,12 +54,16 @@ class TaskController extends Controller
 
     public function store(Request $request)
     {
-        if (!$request->user()->isManager() && (int)$request->assigned_to !== $request->user()->id) abort(403);
         $data = $request->validate([
             'plan_id'=>'nullable|exists:plans,id','assigned_to'=>'required|exists:users,id','title'=>'required|string|max:255',
             'description'=>'nullable|string','priority'=>['required',Rule::in(['low','normal','high','critical'])],
             'due_at'=>'nullable|date'
         ]);
+
+        $ids = app(AccessService::class)->userIds($request->user(), true);
+        abort_unless($ids->contains((int)$data['assigned_to']), 403);
+        if (!$request->user()->isManager()) abort_unless((int)$data['assigned_to'] === (int)$request->user()->id, 403);
+
         $data['created_by'] = $request->user()->id;
         $data['status'] = 'new';
         $task = Task::create($data);
@@ -70,11 +83,16 @@ class TaskController extends Controller
             'deadline_reason'=>'nullable|string|max:5000'
         ]);
 
+        if (!$this->canManageTask($request, $task)) {
+            $forbidden = array_intersect(array_keys($data), ['title','description','priority','due_at']);
+            abort_if(!empty($forbidden), 403, 'Изменять параметры поручения может только автор или руководитель');
+        }
+
         if (array_key_exists('due_at', $data)) {
             $newDueAt = $data['due_at'] ? \Carbon\Carbon::parse($data['due_at']) : null;
             $changed = ($oldDueAt?->timestamp) !== ($newDueAt?->timestamp);
             if ($changed) {
-                abort_unless($request->user()->isManager() || $task->created_by === $request->user()->id, 403);
+                abort_unless($this->canManageTask($request, $task), 403);
                 $reason = trim((string)($data['deadline_reason'] ?? ''));
                 abort_if(mb_strlen($reason) < 3, 422, 'При изменении срока обязательно укажите причину');
                 TaskDeadlineChange::create([
@@ -98,7 +116,7 @@ class TaskController extends Controller
     public function addChecklistItem(Request $request, Task $task)
     {
         $this->authorizeTask($request, $task);
-        abort_unless($request->user()->isManager() || $task->created_by === $request->user()->id, 403);
+        abort_unless($this->canManageTask($request, $task), 403);
         abort_if(in_array($task->status,['completed','cancelled'],true),422,'Нельзя менять чек-лист закрытой задачи');
         $data=$request->validate(['title'=>'required|string|max:255']);
         $item=TaskChecklistItem::create([
@@ -115,6 +133,7 @@ class TaskController extends Controller
         $this->authorizeTask($request, $task);
         abort_unless($item->task_id===$task->id,404);
         abort_if(in_array($task->status,['completed','cancelled'],true),422,'Нельзя менять чек-лист закрытой задачи');
+        abort_unless($task->assigned_to === $request->user()->id || $this->canManageTask($request, $task), 403);
         $done=$request->boolean('is_done');
         $item->update([
             'is_done'=>$done,
@@ -129,7 +148,7 @@ class TaskController extends Controller
     public function changeDeadline(Request $request, Task $task)
     {
         $this->authorizeTask($request, $task);
-        abort_unless($request->user()->isManager() || $task->created_by === $request->user()->id, 403);
+        abort_unless($this->canManageTask($request, $task), 403);
         $data=$request->validate(['due_at'=>'nullable|date','reason'=>'required|string|min:3|max:5000']);
         $old=$task->due_at?->copy();
         $new=$data['due_at']?\Carbon\Carbon::parse($data['due_at']):null;
@@ -197,7 +216,7 @@ class TaskController extends Controller
 
     public function accept(Request $request, Task $task)
     {
-        abort_unless($request->user()->isManager(), 403);
+        abort_unless($this->canManageTask($request, $task), 403);
         abort_unless($task->status === 'review', 422, 'Задача не находится на проверке');
         $data = $request->validate(['message'=>'nullable|string|max:5000']);
         $task->update(['status'=>'completed','progress'=>100,'completed_at'=>now()]);
@@ -209,7 +228,7 @@ class TaskController extends Controller
 
     public function reject(Request $request, Task $task)
     {
-        abort_unless($request->user()->isManager(), 403);
+        abort_unless($this->canManageTask($request, $task), 403);
         abort_unless($task->status === 'review', 422, 'Задача не находится на проверке');
         $data = $request->validate(['message'=>'required|string|min:3|max:5000']);
         $task->update(['status'=>'in_progress','completed_at'=>null,'progress'=>min($task->progress, 99)]);
@@ -230,8 +249,19 @@ class TaskController extends Controller
 
     private function authorizeTask(Request $request, Task $task): void
     {
-        $u = $request->user();
-        abort_unless($u->isManager() || $task->assigned_to === $u->id || $task->created_by === $u->id, 403);
+        $user = $request->user();
+        if ((int)$task->assigned_to === (int)$user->id || (int)$task->created_by === (int)$user->id) return;
+        $ids = app(AccessService::class)->userIds($user, true);
+        abort_unless($user->isManager() && $ids->contains((int)$task->assigned_to), 403);
+    }
+
+    private function canManageTask(Request $request, Task $task): bool
+    {
+        $user = $request->user();
+        if ($user->isAdmin() || (int)$task->created_by === (int)$user->id) return true;
+        if (!$user->isManager()) return false;
+        $assignee = User::find($task->assigned_to);
+        return $assignee ? app(AccessService::class)->canManageUser($user, $assignee) : false;
     }
 
     private function event(Task $task, int $userId, string $type, ?string $from, ?string $to, ?string $message = null): void
