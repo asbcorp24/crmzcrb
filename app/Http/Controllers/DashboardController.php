@@ -12,9 +12,20 @@ class DashboardController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $myTasks = Task::with(['creator','plan'])->where('assigned_to', $user->id)
-            ->whereNotIn('status', ['completed','cancelled'])
-            ->orderByRaw('due_at IS NULL, due_at ASC')->limit(10)->get();
+
+        $myTasks = Task::with(['creator','plan','comments.user'])
+            ->where('assigned_to', $user->id)
+            ->where(function ($q) {
+                $q->whereNotIn('status', ['completed','cancelled'])
+                  ->orWhere(function ($done) {
+                      $done->where('status','completed')->where('completed_at','>=',now()->copy()->subDays(14));
+                  });
+            })
+            ->orderByRaw("CASE WHEN status='completed' THEN 2 WHEN due_at IS NULL THEN 1 ELSE 0 END")
+            ->orderBy('due_at')
+            ->latest('id')
+            ->limit(40)
+            ->get();
 
         $upcomingTasks = Task::with('creator')
             ->where('assigned_to', $user->id)
@@ -27,11 +38,20 @@ class DashboardController extends Controller
             ->whereBetween('period_end', [today(), today()->copy()->addDays(7)])
             ->orderBy('period_end')->get();
 
+        $open = Task::where('assigned_to',$user->id)->whereNotIn('status',['completed','cancelled'])->count();
+        $overdue = Task::where('assigned_to',$user->id)->whereNotIn('status',['completed','cancelled'])->where('due_at','<',now())->count();
+        $review = Task::where('assigned_to',$user->id)->where('status','review')->count();
+        $doneMonth = Task::where('assigned_to',$user->id)->where('status','completed')->whereBetween('completed_at',[now()->copy()->startOfMonth(),now()->copy()->endOfMonth()])->count();
+        $today = Task::where('assigned_to',$user->id)->whereNotIn('status',['completed','cancelled'])->whereDate('due_at',today())->count();
+        $monthScope = $open + $doneMonth;
+
         $stats = [
-            'my_open' => Task::where('assigned_to',$user->id)->whereNotIn('status',['completed','cancelled'])->count(),
-            'my_overdue' => Task::where('assigned_to',$user->id)->whereNotIn('status',['completed','cancelled'])->where('due_at','<',now())->count(),
-            'my_review' => Task::where('assigned_to',$user->id)->where('status','review')->count(),
-            'my_done_month' => Task::where('assigned_to',$user->id)->where('status','completed')->whereBetween('completed_at',[now()->startOfMonth(),now()->endOfMonth()])->count(),
+            'my_open' => $open,
+            'my_overdue' => $overdue,
+            'my_review' => $review,
+            'my_done_month' => $doneMonth,
+            'today' => $today,
+            'done_percent' => $monthScope > 0 ? (int) round(($doneMonth / $monthScope) * 100) : 100,
             'due_7_days' => $upcomingTasks->count(),
             'plans_7_days' => $upcomingPlans->count(),
         ];
