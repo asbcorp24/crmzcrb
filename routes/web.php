@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\ControlController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\PlanController;
 use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
 
@@ -22,6 +24,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/ajax/tasks', [TaskController::class, 'store'])->name('tasks.store');
     Route::patch('/ajax/tasks/{task}', [TaskController::class, 'update'])->name('tasks.update');
 
+    Route::get('/plans', [PlanController::class, 'page'])->name('plans.page');
+    Route::get('/ajax/plans', [PlanController::class, 'index'])->name('plans.index');
+    Route::post('/ajax/plans', [PlanController::class, 'store'])->name('plans.store');
+    Route::patch('/ajax/plans/{plan}', [PlanController::class, 'update'])->name('plans.update');
+    Route::post('/ajax/plans/{plan}/tasks', [PlanController::class, 'addTask'])->name('plans.tasks.store');
+
     Route::get('/employees', [EmployeeController::class, 'page'])->name('employees.page');
     Route::get('/ajax/employees', [EmployeeController::class, 'index'])->name('employees.index');
     Route::post('/ajax/employees', [EmployeeController::class, 'store'])->name('employees.store');
@@ -31,4 +39,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/ajax/departments', [DepartmentController::class, 'index'])->name('departments.index');
     Route::post('/ajax/departments', [DepartmentController::class, 'store'])->name('departments.store');
     Route::patch('/ajax/departments/{department}', [DepartmentController::class, 'update'])->name('departments.update');
+
+    Route::get('/control', [ControlController::class, 'page'])->name('control.page');
+    Route::get('/ajax/control', [ControlController::class, 'data'])->name('control.data');
 });
