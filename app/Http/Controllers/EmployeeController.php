@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Department;
+use App\Models\EmployeeAssignment;
 use App\Models\Plan;
 use App\Models\Task;
 use App\Models\TaskEvent;
@@ -62,7 +63,13 @@ class EmployeeController extends Controller
             ->whereHas('task', fn($q) => $q->where('assigned_to',$employee->id))
             ->latest()->limit(30)->get();
 
-        return view('employees.profile', compact('employee','stats','activeTasks','recentCompleted','plans','events'));
+        $assignments = EmployeeAssignment::with(['staffingPosition.department','staffingPosition.position'])
+            ->where('user_id',$employee->id)
+            ->orderByRaw('ended_at IS NULL DESC')
+            ->orderByDesc('started_at')
+            ->get();
+
+        return view('employees.profile', compact('employee','stats','activeTasks','recentCompleted','plans','events','assignments'));
     }
 
     public function index(Request $request)
