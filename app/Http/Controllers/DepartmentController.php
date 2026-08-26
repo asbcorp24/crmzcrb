@@ -3,15 +3,19 @@
 namespace App\Http\Controllers;
 
 use App\Models\Department;
+use App\Services\AccessService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class DepartmentController extends Controller
 {
-    public function page() { return view('departments.index'); }
+    public function page(Request $request) { return view('departments.index'); }
 
-    public function index()
+    public function index(Request $request)
     {
-        return response()->json(Department::withCount('users')->orderBy('sort_order')->orderBy('name')->get());
+        $access = app(AccessService::class);
+        $ids = $access->departmentIds($request->user());
+        return response()->json(Department::withCount('users')->whereIn('id',$ids)->orderBy('sort_order')->orderBy('name')->get());
     }
 
     public function store(Request $request)
@@ -19,8 +23,14 @@ class DepartmentController extends Controller
         abort_unless($request->user()->isManager(), 403);
         $data = $request->validate([
             'parent_id'=>'nullable|exists:departments,id','name'=>'required|string|max:190','short_name'=>'nullable|string|max:100',
-            'type'=>'nullable|string|max:100','is_active'=>'required|boolean','sort_order'=>'nullable|integer|min:0|max:10000'
+            'type'=>['required',Rule::in(['administration','department','service','office','other'])],
+            'is_active'=>'required|boolean','sort_order'=>'nullable|integer|min:0|max:10000'
         ]);
+
+        if (!$request->user()->isAdmin() && !empty($data['parent_id'])) {
+            abort_unless(app(AccessService::class)->departmentIds($request->user())->contains((int)$data['parent_id']), 403);
+        }
+
         $department = Department::create($data);
         return response()->json(['ok'=>true,'department'=>$department], 201);
     }
@@ -28,12 +38,35 @@ class DepartmentController extends Controller
     public function update(Request $request, Department $department)
     {
         abort_unless($request->user()->isManager(), 403);
+        $access = app(AccessService::class);
+        abort_unless($request->user()->isAdmin() || $access->canViewDepartment($request->user(), $department), 403);
+
         $data = $request->validate([
             'parent_id'=>'nullable|exists:departments,id','name'=>'sometimes|required|string|max:190','short_name'=>'nullable|string|max:100',
-            'type'=>'nullable|string|max:100','is_active'=>'sometimes|boolean','sort_order'=>'nullable|integer|min:0|max:10000'
+            'type'=>['sometimes','required',Rule::in(['administration','department','service','office','other'])],
+            'is_active'=>'sometimes|boolean','sort_order'=>'nullable|integer|min:0|max:10000'
         ]);
-        if (isset($data['parent_id']) && (int)$data['parent_id'] === $department->id) return response()->json(['message'=>'Подразделение не может быть родителем само себе'], 422);
+
+        if (array_key_exists('parent_id',$data) && $data['parent_id']) {
+            abort_if((int)$data['parent_id'] === (int)$department->id, 422, 'Подразделение не может быть родителем само себе');
+            abort_if($this->wouldCreateCycle($department->id,(int)$data['parent_id']),422,'Нельзя переместить подразделение внутрь его дочерней ветки');
+            if (!$request->user()->isAdmin()) abort_unless($access->departmentIds($request->user())->contains((int)$data['parent_id']),403);
+        }
+
         $department->update($data);
         return response()->json(['ok'=>true,'department'=>$department->fresh()]);
+    }
+
+    private function wouldCreateCycle(int $departmentId, int $newParentId): bool
+    {
+        $cursor = $newParentId;
+        $seen = [];
+        while ($cursor) {
+            if ($cursor === $departmentId) return true;
+            if (isset($seen[$cursor])) return true;
+            $seen[$cursor] = true;
+            $cursor = (int)(Department::whereKey($cursor)->value('parent_id') ?: 0);
+        }
+        return false;
     }
 }
