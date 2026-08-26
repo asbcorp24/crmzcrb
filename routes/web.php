@@ -11,6 +11,7 @@ use App\Http\Controllers\PlanController;
 use App\Http\Controllers\StaffingController;
 use App\Http\Controllers\TaskAttachmentController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\TaskOverdueReasonController;
 use App\Http\Controllers\TaskTemplateController;
 use Illuminate\Support\Facades\Route;
 
@@ -43,6 +44,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/ajax/tasks/{task}/checklist', [TaskController::class, 'addChecklistItem'])->name('tasks.checklist.store');
     Route::patch('/ajax/tasks/{task}/checklist/{item}', [TaskController::class, 'toggleChecklistItem'])->name('tasks.checklist.toggle');
     Route::post('/ajax/tasks/{task}/deadline', [TaskController::class, 'changeDeadline'])->name('tasks.deadline.change');
+    Route::post('/ajax/tasks/{task}/overdue-reason', [TaskOverdueReasonController::class, 'store'])->name('tasks.overdue-reason.store');
     Route::post('/ajax/tasks/{task}/attachments', [TaskAttachmentController::class, 'store'])->name('tasks.attachments.store');
     Route::get('/attachments/{attachment}/download', [TaskAttachmentController::class, 'download'])->name('attachments.download');
     Route::delete('/ajax/attachments/{attachment}', [TaskAttachmentController::class, 'destroy'])->name('attachments.destroy');
@@ -50,6 +52,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/task-templates', [TaskTemplateController::class, 'page'])->name('task-templates.page');
     Route::get('/ajax/task-templates', [TaskTemplateController::class, 'index'])->name('task-templates.index');
     Route::post('/ajax/task-templates', [TaskTemplateController::class, 'store'])->name('task-templates.store');
+    Route::patch('/ajax/task-templates/{template}', [TaskTemplateController::class, 'update'])->name('task-templates.update');
+    Route::post('/ajax/task-templates/{template}/toggle', [TaskTemplateController::class, 'toggle'])->name('task-templates.toggle');
     Route::post('/ajax/task-templates/{template}/create-task', [TaskTemplateController::class, 'createTask'])->name('task-templates.create-task');
 
     Route::get('/plans', [PlanController::class, 'page'])->name('plans.page');
