@@ -12,6 +12,33 @@ class Task extends Model
     protected $casts = ['started_at'=>'datetime','due_at'=>'datetime','completed_at'=>'datetime'];
     protected $appends = ['is_overdue'];
 
+    protected static function booted(): void
+    {
+        static::created(function (Task $task) {
+            if (!$task->due_at || !$task->assigned_to || !$task->created_by) return;
+            $date = $task->due_at->toDateString();
+            $absence = EmployeeAbsence::where('user_id',$task->assigned_to)
+                ->whereDate('date_from','<=',$date)->whereDate('date_to','>=',$date)->first();
+            if (!$absence) return;
+
+            $type = ['vacation'=>'отпуск','sick_leave'=>'больничный','business_trip'=>'командировка','training'=>'обучение','other'=>'отсутствие'][$absence->type] ?? 'отсутствие';
+            $sub = EmployeeSubstitution::with('substituteUser')
+                ->where('absent_user_id',$task->assigned_to)
+                ->whereDate('date_from','<=',$date)->whereDate('date_to','>=',$date)->latest()->first();
+            $body = 'Исполнитель отсутствует на дату срока: '.$type.' '.$absence->date_from->format('d.m.Y').'–'.$absence->date_to->format('d.m.Y').'.';
+            if ($sub?->substituteUser) $body .= ' Заместитель: '.$sub->substituteUser->full_name.'.';
+
+            CrmNotification::create([
+                'user_id'=>$task->created_by,
+                'task_id'=>$task->id,
+                'type'=>'assignee_absent',
+                'title'=>'Исполнитель отсутствует в срок задачи',
+                'body'=>$body,
+                'url'=>route('tasks.page',['task'=>$task->id],false),
+            ]);
+        });
+    }
+
     public function plan(): BelongsTo { return $this->belongsTo(Plan::class); }
     public function creator(): BelongsTo { return $this->belongsTo(User::class, 'created_by'); }
     public function assignee(): BelongsTo { return $this->belongsTo(User::class, 'assigned_to'); }
@@ -21,6 +48,7 @@ class Task extends Model
     public function checklistItems(): HasMany { return $this->hasMany(TaskChecklistItem::class)->orderBy('sort_order'); }
     public function deadlineChanges(): HasMany { return $this->hasMany(TaskDeadlineChange::class)->latest(); }
     public function overdueReasons(): HasMany { return $this->hasMany(TaskOverdueReason::class)->latest(); }
+    public function delegations(): HasMany { return $this->hasMany(TaskDelegation::class)->latest(); }
 
     public function getIsOverdueAttribute(): bool
     {
