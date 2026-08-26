@@ -7,6 +7,7 @@ use App\Http\Controllers\ControlController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\MeetingController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\StaffingController;
@@ -67,6 +68,14 @@ Route::middleware('auth')->group(function () {
     Route::patch('/ajax/task-templates/{template}', [TaskTemplateController::class, 'update'])->name('task-templates.update');
     Route::post('/ajax/task-templates/{template}/toggle', [TaskTemplateController::class, 'toggle'])->name('task-templates.toggle');
     Route::post('/ajax/task-templates/{template}/create-task', [TaskTemplateController::class, 'createTask'])->name('task-templates.create-task');
+
+    Route::get('/meetings', [MeetingController::class, 'page'])->name('meetings.page');
+    Route::get('/ajax/meetings', [MeetingController::class, 'index'])->name('meetings.index');
+    Route::get('/ajax/meetings/{meeting}', [MeetingController::class, 'show'])->name('meetings.show');
+    Route::post('/ajax/meetings', [MeetingController::class, 'store'])->name('meetings.store');
+    Route::patch('/ajax/meetings/{meeting}', [MeetingController::class, 'update'])->name('meetings.update');
+    Route::post('/ajax/meetings/{meeting}/items', [MeetingController::class, 'addItem'])->name('meetings.items.store');
+    Route::post('/ajax/meetings/{meeting}/close', [MeetingController::class, 'close'])->name('meetings.close');
 
     Route::get('/plans', [PlanController::class, 'page'])->name('plans.page');
     Route::get('/ajax/plans', [PlanController::class, 'index'])->name('plans.index');
