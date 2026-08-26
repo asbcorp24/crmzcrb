@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CrmNotification;
 use App\Models\Plan;
 use App\Models\Task;
 use App\Models\User;
@@ -100,6 +101,17 @@ class PlanController extends Controller
             'status' => 'new',
             'progress' => 0,
         ]);
+
+        if ($task->assigned_to !== $user->id) {
+            CrmNotification::create([
+                'user_id' => $task->assigned_to,
+                'task_id' => $task->id,
+                'type' => 'task_assigned',
+                'title' => 'Новая задача из плана',
+                'body' => $task->title,
+                'url' => route('tasks.page', ['task' => $task->id], false),
+            ]);
+        }
 
         $plan->progress = $this->calculateProgress($plan->fresh('tasks'));
         $plan->save();
