@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\AvailabilityController;
 use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\ControlController;
 use App\Http\Controllers\DashboardController;
@@ -11,6 +12,7 @@ use App\Http\Controllers\PlanController;
 use App\Http\Controllers\StaffingController;
 use App\Http\Controllers\TaskAttachmentController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\TaskDelegationController;
 use App\Http\Controllers\TaskOverdueReasonController;
 use App\Http\Controllers\TaskTemplateController;
 use Illuminate\Support\Facades\Route;
@@ -31,6 +33,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/calendar', [CalendarController::class, 'page'])->name('calendar.page');
     Route::get('/ajax/calendar/events', [CalendarController::class, 'events'])->name('calendar.events');
 
+    Route::get('/availability', [AvailabilityController::class, 'page'])->name('availability.page');
+    Route::get('/ajax/availability/events', [AvailabilityController::class, 'events'])->name('availability.events');
+    Route::post('/ajax/availability/absences', [AvailabilityController::class, 'storeAbsence'])->name('availability.absences.store');
+    Route::delete('/ajax/availability/absences/{absence}', [AvailabilityController::class, 'destroyAbsence'])->name('availability.absences.destroy');
+    Route::get('/ajax/availability/substitutions', [AvailabilityController::class, 'substitutions'])->name('availability.substitutions');
+    Route::post('/ajax/availability/substitutions', [AvailabilityController::class, 'storeSubstitution'])->name('availability.substitutions.store');
+    Route::get('/ajax/availability/check', [AvailabilityController::class, 'check'])->name('availability.check');
+
     Route::get('/tasks', [TaskController::class, 'page'])->name('tasks.page');
     Route::get('/ajax/tasks', [TaskController::class, 'index'])->name('tasks.index');
     Route::get('/ajax/tasks/{task}', [TaskController::class, 'show'])->name('tasks.show');
@@ -45,6 +55,8 @@ Route::middleware('auth')->group(function () {
     Route::patch('/ajax/tasks/{task}/checklist/{item}', [TaskController::class, 'toggleChecklistItem'])->name('tasks.checklist.toggle');
     Route::post('/ajax/tasks/{task}/deadline', [TaskController::class, 'changeDeadline'])->name('tasks.deadline.change');
     Route::post('/ajax/tasks/{task}/overdue-reason', [TaskOverdueReasonController::class, 'store'])->name('tasks.overdue-reason.store');
+    Route::post('/ajax/tasks/{task}/delegate', [TaskDelegationController::class, 'store'])->name('tasks.delegate');
+    Route::get('/ajax/tasks/{task}/delegations', [TaskDelegationController::class, 'history'])->name('tasks.delegations');
     Route::post('/ajax/tasks/{task}/attachments', [TaskAttachmentController::class, 'store'])->name('tasks.attachments.store');
     Route::get('/attachments/{attachment}/download', [TaskAttachmentController::class, 'download'])->name('attachments.download');
     Route::delete('/ajax/attachments/{attachment}', [TaskAttachmentController::class, 'destroy'])->name('attachments.destroy');
