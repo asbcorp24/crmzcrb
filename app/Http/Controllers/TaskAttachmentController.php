@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Task;
 use App\Models\TaskAttachment;
 use App\Models\TaskEvent;
+use App\Models\User;
+use App\Services\AccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -57,7 +59,12 @@ class TaskAttachmentController extends Controller
         $task = $attachment->task;
         $this->authorizeTask($request, $task);
         $user = $request->user();
-        abort_unless($user->isManager() || $attachment->user_id === $user->id || $task->assigned_to === $user->id, 403);
+        abort_unless(
+            $attachment->user_id === $user->id ||
+            $task->assigned_to === $user->id ||
+            $this->canManageTask($request, $task),
+            403
+        );
 
         Storage::disk('local')->delete($attachment->path);
         $name = $attachment->original_name;
@@ -77,7 +84,18 @@ class TaskAttachmentController extends Controller
 
     private function authorizeTask(Request $request, Task $task): void
     {
-        $u = $request->user();
-        abort_unless($u->isManager() || $task->assigned_to === $u->id || $task->created_by === $u->id, 403);
+        $user = $request->user();
+        if ((int)$task->assigned_to === (int)$user->id || (int)$task->created_by === (int)$user->id) return;
+        $ids = app(AccessService::class)->userIds($user, true);
+        abort_unless($user->isManager() && $ids->contains((int)$task->assigned_to), 403);
+    }
+
+    private function canManageTask(Request $request, Task $task): bool
+    {
+        $user = $request->user();
+        if ($user->isAdmin() || (int)$task->created_by === (int)$user->id) return true;
+        if (!$user->isManager()) return false;
+        $assignee = User::find($task->assigned_to);
+        return $assignee ? app(AccessService::class)->canManageUser($user, $assignee) : false;
     }
 }
