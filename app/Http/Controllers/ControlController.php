@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class ControlController extends Controller
 {
@@ -54,15 +53,52 @@ class ControlController extends Controller
             ];
         });
 
+        $base = Task::with(['assignee.department','creator','overdueReasons.user'])
+            ->whereIn('assigned_to',$ids)
+            ->whereNotIn('status',['completed','cancelled']);
+
+        $critical = (clone $base)->where('priority','critical')->orderByRaw('due_at IS NULL, due_at ASC')->limit(50)->get();
+        $overdue = (clone $base)->whereNotNull('due_at')->where('due_at','<',now())->orderBy('due_at')->limit(100)->get();
+        $review = Task::with(['assignee.department','creator'])->whereIn('assigned_to',$ids)->where('status','review')->oldest('updated_at')->limit(100)->get();
+        $today = (clone $base)->whereBetween('due_at',[today()->startOfDay(),today()->endOfDay()])->orderBy('due_at')->limit(100)->get();
+        $tomorrow = (clone $base)->whereBetween('due_at',[today()->addDay()->startOfDay(),today()->addDay()->endOfDay()])->orderBy('due_at')->limit(100)->get();
+        $stale = (clone $base)->where('updated_at','<',now()->subDays(3))->orderBy('updated_at')->limit(100)->get();
+
+        $serialize = fn($tasks) => $tasks->map(function(Task $task){
+            $reason=$task->overdueReasons->first();
+            return [
+                'id'=>$task->id,'title'=>$task->title,'priority'=>$task->priority,'status'=>$task->status,'progress'=>(int)$task->progress,
+                'due_at'=>$task->due_at?->toIso8601String(),'updated_at'=>$task->updated_at?->toIso8601String(),
+                'assignee'=>$task->assignee?->full_name,'department'=>$task->assignee?->department?->name,
+                'overdue'=>$task->is_overdue,
+                'overdue_reason'=>$reason ? [
+                    'code'=>$reason->reason_code,'comment'=>$reason->comment,'created_at'=>$reason->created_at?->toIso8601String(),
+                    'user'=>$reason->user?->full_name,
+                ] : null,
+            ];
+        })->values();
+
         return response()->json([
             'summary' => [
                 'employees' => $rows->count(),
                 'tasks' => $rows->sum('total'),
                 'completed' => $rows->sum('completed'),
-                'review' => $rows->sum('review'),
-                'overdue' => $rows->sum('overdue'),
+                'review' => $review->count(),
+                'overdue' => $overdue->count(),
+                'critical' => $critical->count(),
+                'today' => $today->count(),
+                'tomorrow' => $tomorrow->count(),
+                'stale' => $stale->count(),
             ],
             'employees' => $rows,
+            'buckets' => [
+                'critical'=>$serialize($critical),
+                'overdue'=>$serialize($overdue),
+                'review'=>$serialize($review),
+                'today'=>$serialize($today),
+                'tomorrow'=>$serialize($tomorrow),
+                'stale'=>$serialize($stale),
+            ],
         ]);
     }
 }
