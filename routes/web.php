@@ -8,6 +8,7 @@ use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PlanController;
+use App\Http\Controllers\StaffingController;
 use App\Http\Controllers\TaskAttachmentController;
 use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
@@ -37,7 +38,6 @@ Route::middleware('auth')->group(function () {
     Route::post('/ajax/tasks/{task}/submit-review', [TaskController::class, 'submitReview'])->name('tasks.submit-review');
     Route::post('/ajax/tasks/{task}/accept', [TaskController::class, 'accept'])->name('tasks.accept');
     Route::post('/ajax/tasks/{task}/reject', [TaskController::class, 'reject'])->name('tasks.reject');
-
     Route::post('/ajax/tasks/{task}/attachments', [TaskAttachmentController::class, 'store'])->name('tasks.attachments.store');
     Route::get('/attachments/{attachment}/download', [TaskAttachmentController::class, 'download'])->name('attachments.download');
     Route::delete('/ajax/attachments/{attachment}', [TaskAttachmentController::class, 'destroy'])->name('attachments.destroy');
@@ -58,6 +58,17 @@ Route::middleware('auth')->group(function () {
     Route::get('/ajax/departments', [DepartmentController::class, 'index'])->name('departments.index');
     Route::post('/ajax/departments', [DepartmentController::class, 'store'])->name('departments.store');
     Route::patch('/ajax/departments/{department}', [DepartmentController::class, 'update'])->name('departments.update');
+
+    Route::get('/staffing', [StaffingController::class, 'page'])->name('staffing.page');
+    Route::get('/ajax/staffing/positions', [StaffingController::class, 'positions'])->name('staffing.positions');
+    Route::post('/ajax/staffing/positions', [StaffingController::class, 'storePosition'])->name('staffing.positions.store');
+    Route::patch('/ajax/staffing/positions/{position}', [StaffingController::class, 'updatePosition'])->name('staffing.positions.update');
+    Route::get('/ajax/staffing/rows', [StaffingController::class, 'rows'])->name('staffing.rows');
+    Route::post('/ajax/staffing/rows', [StaffingController::class, 'storeRow'])->name('staffing.rows.store');
+    Route::patch('/ajax/staffing/rows/{staffingPosition}', [StaffingController::class, 'updateRow'])->name('staffing.rows.update');
+    Route::get('/ajax/employees/{employee}/assignments', [StaffingController::class, 'assignments'])->name('staffing.assignments');
+    Route::post('/ajax/staffing/assignments', [StaffingController::class, 'assign'])->name('staffing.assignments.store');
+    Route::post('/ajax/staffing/assignments/{assignment}/end', [StaffingController::class, 'endAssignment'])->name('staffing.assignments.end');
 
     Route::get('/control', [ControlController::class, 'page'])->name('control.page');
     Route::get('/ajax/control', [ControlController::class, 'data'])->name('control.data');
