@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Department;
+use App\Models\Plan;
+use App\Models\Task;
+use App\Models\TaskEvent;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -16,6 +19,50 @@ class EmployeeController extends Controller
             'departments' => Department::where('is_active', true)->orderBy('name')->get(),
             'managers' => User::whereIn('role', ['admin','manager'])->where('is_active', true)->orderBy('last_name')->get(),
         ]);
+    }
+
+    public function profile(Request $request, User $employee)
+    {
+        $viewer = $request->user();
+        abort_unless($viewer->id === $employee->id || $viewer->isManager(), 403);
+
+        $employee->load(['department','manager','subordinates']);
+
+        $taskBase = Task::where('assigned_to', $employee->id);
+        $stats = [
+            'all' => (clone $taskBase)->count(),
+            'open' => (clone $taskBase)->whereNotIn('status', ['completed','cancelled'])->count(),
+            'overdue' => (clone $taskBase)->whereNotIn('status', ['completed','cancelled'])->whereNotNull('due_at')->where('due_at','<',now())->count(),
+            'review' => (clone $taskBase)->where('status','review')->count(),
+            'completed' => (clone $taskBase)->where('status','completed')->count(),
+            'completed_month' => (clone $taskBase)->where('status','completed')->whereBetween('completed_at', [now()->copy()->startOfMonth(), now()->copy()->endOfMonth()])->count(),
+        ];
+
+        $progressRows = (clone $taskBase)->whereNotIn('status',['cancelled'])->get(['status','progress']);
+        $stats['avg_progress'] = $progressRows->isEmpty() ? 0 : (int) round($progressRows->avg(fn($task) => $task->status === 'completed' ? 100 : (int)$task->progress));
+        $stats['completion_rate'] = $stats['all'] > 0 ? (int) round(($stats['completed'] / $stats['all']) * 100) : 0;
+
+        $activeTasks = Task::with(['creator','plan'])
+            ->where('assigned_to',$employee->id)
+            ->whereNotIn('status',['completed','cancelled'])
+            ->orderByRaw('due_at IS NULL, due_at ASC')
+            ->limit(12)->get();
+
+        $recentCompleted = Task::with('creator')
+            ->where('assigned_to',$employee->id)
+            ->where('status','completed')
+            ->latest('completed_at')->limit(10)->get();
+
+        $plans = Plan::with('tasks')
+            ->where('user_id',$employee->id)
+            ->whereNotIn('status',['completed','cancelled'])
+            ->orderByDesc('period_start')->limit(10)->get();
+
+        $events = TaskEvent::with(['task','user'])
+            ->whereHas('task', fn($q) => $q->where('assigned_to',$employee->id))
+            ->latest()->limit(30)->get();
+
+        return view('employees.profile', compact('employee','stats','activeTasks','recentCompleted','plans','events'));
     }
 
     public function index(Request $request)
