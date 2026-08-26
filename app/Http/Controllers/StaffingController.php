@@ -7,7 +7,9 @@ use App\Models\EmployeeAssignment;
 use App\Models\Position;
 use App\Models\StaffingPosition;
 use App\Models\User;
+use App\Services\AccessService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class StaffingController extends Controller
@@ -15,10 +17,14 @@ class StaffingController extends Controller
     public function page(Request $request)
     {
         abort_unless($request->user()->isManager(), 403);
+        $access = app(AccessService::class);
+        $departmentIds = $access->departmentIds($request->user());
+        $userIds = $access->userIds($request->user(), true);
+
         return view('staffing.index', [
-            'departments' => Department::where('is_active', true)->orderBy('name')->get(),
+            'departments' => Department::whereIn('id', $departmentIds)->where('is_active', true)->orderBy('name')->get(),
             'positions' => Position::where('is_active', true)->orderBy('name')->get(),
-            'employees' => User::where('is_active', true)->orderBy('last_name')->orderBy('first_name')->get(),
+            'employees' => User::whereIn('id', $userIds)->where('is_active', true)->orderBy('last_name')->orderBy('first_name')->get(),
         ]);
     }
 
@@ -30,7 +36,7 @@ class StaffingController extends Controller
 
     public function storePosition(Request $request)
     {
-        abort_unless($request->user()->isManager(), 403);
+        abort_unless($request->user()->isAdmin(), 403);
         $data = $request->validate([
             'name'=>'required|string|max:190',
             'category'=>'nullable|string|max:100',
@@ -42,7 +48,7 @@ class StaffingController extends Controller
 
     public function updatePosition(Request $request, Position $position)
     {
-        abort_unless($request->user()->isManager(), 403);
+        abort_unless($request->user()->isAdmin(), 403);
         $data = $request->validate([
             'name'=>'sometimes|required|string|max:190',
             'category'=>'nullable|string|max:100',
@@ -56,8 +62,15 @@ class StaffingController extends Controller
     public function rows(Request $request)
     {
         abort_unless($request->user()->isManager(), 403);
-        $q = StaffingPosition::with(['department','position','activeAssignments.user']);
-        if ($request->filled('department_id')) $q->where('department_id', $request->integer('department_id'));
+        $departmentIds = app(AccessService::class)->departmentIds($request->user());
+        $q = StaffingPosition::with(['department','position','activeAssignments.user'])
+            ->whereIn('department_id', $departmentIds);
+
+        if ($request->filled('department_id')) {
+            $departmentId = $request->integer('department_id');
+            abort_unless($departmentIds->contains($departmentId), 403);
+            $q->where('department_id', $departmentId);
+        }
         if ($request->boolean('vacant')) {
             $q->whereRaw('(SELECT COALESCE(SUM(rate),0) FROM employee_assignments WHERE staffing_position_id = staffing_positions.id AND ended_at IS NULL) < planned_rate');
         }
@@ -74,6 +87,8 @@ class StaffingController extends Controller
             'note'=>'nullable|string|max:255',
             'is_active'=>'required|boolean',
         ]);
+        $this->authorizeDepartment($request, (int)$data['department_id']);
+        abort_unless(Position::whereKey($data['position_id'])->where('is_active', true)->exists(), 422, 'Должность отключена');
         $row = StaffingPosition::create($data);
         return response()->json(['ok'=>true,'row'=>$row->load(['department','position','activeAssignments.user'])], 201);
     }
@@ -81,6 +96,7 @@ class StaffingController extends Controller
     public function updateRow(Request $request, StaffingPosition $staffingPosition)
     {
         abort_unless($request->user()->isManager(), 403);
+        $this->authorizeDepartment($request, $staffingPosition->department_id);
         $data = $request->validate([
             'department_id'=>'sometimes|required|exists:departments,id',
             'position_id'=>'sometimes|required|exists:positions,id',
@@ -88,13 +104,24 @@ class StaffingController extends Controller
             'note'=>'nullable|string|max:255',
             'is_active'=>'sometimes|boolean',
         ]);
+        if (isset($data['department_id'])) $this->authorizeDepartment($request, (int)$data['department_id']);
+        if (isset($data['position_id'])) abort_unless(Position::whereKey($data['position_id'])->where('is_active', true)->exists(), 422, 'Должность отключена');
+
+        if (isset($data['planned_rate'])) {
+            $occupied = (float)$staffingPosition->activeAssignments()->sum('rate');
+            abort_if((float)$data['planned_rate'] + 0.0001 < $occupied, 422, 'Нельзя уменьшить ставки ниже уже занятого количества');
+        }
+
         $staffingPosition->update($data);
         return response()->json(['ok'=>true,'row'=>$staffingPosition->fresh()->load(['department','position','activeAssignments.user'])]);
     }
 
     public function assignments(Request $request, User $employee)
     {
-        abort_unless($request->user()->isManager() || $request->user()->id === $employee->id, 403);
+        $viewer = $request->user();
+        if ((int)$viewer->id !== (int)$employee->id) {
+            abort_unless($viewer->isManager() && app(AccessService::class)->canViewUser($viewer, $employee), 403);
+        }
         return response()->json(EmployeeAssignment::with(['staffingPosition.department','staffingPosition.position'])
             ->where('user_id',$employee->id)->orderByDesc('started_at')->orderByDesc('id')->get());
     }
@@ -112,25 +139,45 @@ class StaffingController extends Controller
             'note'=>'nullable|string|max:5000',
         ]);
 
-        $row = StaffingPosition::findOrFail($data['staffing_position_id']);
-        $occupied = (float) $row->activeAssignments()->sum('rate');
-        if ($occupied + (float)$data['rate'] > (float)$row->planned_rate + 0.0001) {
-            return response()->json(['message'=>'Назначение превышает количество ставок по штатному расписанию'], 422);
-        }
+        $employee = User::findOrFail($data['user_id']);
+        abort_unless(app(AccessService::class)->canManageUser($request->user(), $employee) || $request->user()->isAdmin(), 403);
 
-        if ($data['is_primary']) {
-            EmployeeAssignment::where('user_id',$data['user_id'])->whereNull('ended_at')->update(['is_primary'=>false]);
-        }
+        $assignment = DB::transaction(function () use ($request, $data) {
+            $row = StaffingPosition::lockForUpdate()->findOrFail($data['staffing_position_id']);
+            $this->authorizeDepartment($request, $row->department_id);
+            abort_unless($row->is_active && $row->position()->where('is_active', true)->exists(), 422, 'Штатная позиция отключена');
 
-        $assignment = EmployeeAssignment::create($data);
+            $duplicate = EmployeeAssignment::where('user_id',$data['user_id'])
+                ->where('staffing_position_id',$data['staffing_position_id'])
+                ->whereNull('ended_at')->exists();
+            abort_if($duplicate, 422, 'У сотрудника уже есть активное назначение на эту штатную позицию');
+
+            $occupied = (float)$row->activeAssignments()->lockForUpdate()->sum('rate');
+            abort_if($occupied + (float)$data['rate'] > (float)$row->planned_rate + 0.0001, 422, 'Назначение превышает количество ставок по штатному расписанию');
+
+            if ($data['is_primary']) {
+                EmployeeAssignment::where('user_id',$data['user_id'])->whereNull('ended_at')->update(['is_primary'=>false]);
+            }
+            return EmployeeAssignment::create($data);
+        });
+
         return response()->json(['ok'=>true,'assignment'=>$assignment->load(['user','staffingPosition.department','staffingPosition.position'])], 201);
     }
 
     public function endAssignment(Request $request, EmployeeAssignment $assignment)
     {
         abort_unless($request->user()->isManager(), 403);
+        $assignment->loadMissing('staffingPosition','user');
+        $this->authorizeDepartment($request, $assignment->staffingPosition->department_id);
+        abort_unless(app(AccessService::class)->canManageUser($request->user(), $assignment->user) || $request->user()->isAdmin(), 403);
+        abort_if($assignment->ended_at, 422, 'Назначение уже завершено');
         $data = $request->validate(['ended_at'=>'required|date|after_or_equal:'.$assignment->started_at->format('Y-m-d')]);
         $assignment->update(['ended_at'=>$data['ended_at'],'is_primary'=>false]);
         return response()->json(['ok'=>true,'assignment'=>$assignment->fresh()]);
+    }
+
+    private function authorizeDepartment(Request $request, int $departmentId): void
+    {
+        abort_unless(app(AccessService::class)->departmentIds($request->user())->contains($departmentId), 403);
     }
 }
