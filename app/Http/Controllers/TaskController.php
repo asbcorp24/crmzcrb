@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CrmNotification;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskEvent;
@@ -48,6 +49,11 @@ class TaskController extends Controller
         $data['created_by'] = $request->user()->id;
         $task = Task::create($data);
         $this->event($task, $request->user()->id, 'created', null, $task->status, 'Задача создана');
+
+        if ($task->assigned_to !== $request->user()->id) {
+            $this->notify($task->assigned_to, $task, 'task_assigned', 'Новая задача', $task->title);
+        }
+
         return response()->json(['ok'=>true,'task'=>$task->load(['assignee','creator'])], 201);
     }
 
@@ -71,6 +77,14 @@ class TaskController extends Controller
         $data = $request->validate(['body'=>'required|string|max:5000']);
         $comment = TaskComment::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'body'=>$data['body']]);
         $this->event($task, $request->user()->id, 'comment', $task->status, $task->status, 'Добавлен комментарий');
+
+        $recipients = array_unique(array_filter([$task->assigned_to, $task->created_by]));
+        foreach ($recipients as $userId) {
+            if ((int)$userId !== $request->user()->id) {
+                $this->notify((int)$userId, $task, 'task_comment', 'Новый комментарий к задаче', $task->title);
+            }
+        }
+
         return response()->json(['ok'=>true,'comment'=>$comment->load('user')], 201);
     }
 
@@ -81,6 +95,15 @@ class TaskController extends Controller
         $from = $task->status;
         $task->update(['result'=>$data['result'],'progress'=>$data['progress'] ?? max($task->progress, 100),'status'=>'review','started_at'=>$task->started_at ?: now(),'completed_at'=>null]);
         $this->event($task, $request->user()->id, 'submitted_for_review', $from, 'review', 'Сотрудник отправил отчёт на проверку');
+
+        $task->loadMissing('assignee');
+        $recipients = array_unique(array_filter([$task->created_by, $task->assignee?->manager_id]));
+        foreach ($recipients as $userId) {
+            if ((int)$userId !== $request->user()->id) {
+                $this->notify((int)$userId, $task, 'task_review', 'Задача ожидает проверки', $task->title);
+            }
+        }
+
         return response()->json(['ok'=>true,'task'=>$task->fresh()]);
     }
 
@@ -92,6 +115,7 @@ class TaskController extends Controller
         $task->update(['status'=>'completed','progress'=>100,'completed_at'=>now()]);
         if (!empty($data['message'])) TaskComment::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'body'=>$data['message']]);
         $this->event($task, $request->user()->id, 'accepted', 'review', 'completed', $data['message'] ?? 'Результат принят руководителем');
+        $this->notify($task->assigned_to, $task, 'task_accepted', 'Задача принята', $task->title);
         return response()->json(['ok'=>true,'task'=>$task->fresh()]);
     }
 
@@ -103,6 +127,7 @@ class TaskController extends Controller
         $task->update(['status'=>'in_progress','completed_at'=>null,'progress'=>min($task->progress, 99)]);
         TaskComment::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'body'=>'Возврат на доработку: '.$data['message']]);
         $this->event($task, $request->user()->id, 'rejected', 'review', 'in_progress', $data['message']);
+        $this->notify($task->assigned_to, $task, 'task_rejected', 'Задача возвращена на доработку', $data['message']);
         return response()->json(['ok'=>true,'task'=>$task->fresh()]);
     }
 
@@ -115,5 +140,17 @@ class TaskController extends Controller
     private function event(Task $task, int $userId, string $type, ?string $from, ?string $to, ?string $message = null): void
     {
         TaskEvent::create(['task_id'=>$task->id,'user_id'=>$userId,'type'=>$type,'from_status'=>$from,'to_status'=>$to,'message'=>$message]);
+    }
+
+    private function notify(int $userId, Task $task, string $type, string $title, ?string $body = null): void
+    {
+        CrmNotification::create([
+            'user_id' => $userId,
+            'task_id' => $task->id,
+            'type' => $type,
+            'title' => $title,
+            'body' => $body,
+            'url' => route('tasks.page', ['task' => $task->id], false),
+        ]);
     }
 }
