@@ -110,7 +110,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/staffing', [StaffingController::class, 'page'])->name('staffing.page');
     Route::get('/ajax/staffing/positions', [StaffingController::class, 'positions'])->name('staffing.positions');
     Route::post('/ajax/staffing/positions', [StaffingController::class, 'storePosition'])->name('staffing.positions.store');
-    Route::patch('/ajax/staffing/positions/{position}', [StaffingController::class, 'updateRow'])->name('staffing.positions.update');
+    Route::patch('/ajax/staffing/positions/{position}', [StaffingController::class, 'updatePosition'])->name('staffing.positions.update');
     Route::get('/ajax/staffing/rows', [StaffingController::class, 'rows'])->name('staffing.rows');
     Route::post('/ajax/staffing/rows', [StaffingController::class, 'storeRow'])->name('staffing.rows.store');
     Route::patch('/ajax/staffing/rows/{staffingPosition}', [StaffingController::class, 'updateRow'])->name('staffing.rows.update');
