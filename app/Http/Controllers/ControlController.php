@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Task;
 use App\Models\User;
+use App\Services\AccessService;
 use Illuminate\Http\Request;
 
 class ControlController extends Controller
@@ -18,15 +19,16 @@ class ControlController extends Controller
     {
         abort_unless($request->user()->isManager(), 403);
 
-        $user = $request->user();
+        $access = app(AccessService::class);
+        $ids = $access->userIds($request->user(), false);
+
         $employees = User::query()
             ->with('department')
             ->where('is_active', true)
-            ->when(!$user->isAdmin(), fn ($q) => $q->where('manager_id', $user->id))
+            ->whereIn('id', $ids)
             ->orderBy('last_name')->orderBy('first_name')
             ->get();
 
-        $ids = $employees->pluck('id');
         $stats = Task::query()
             ->select('assigned_to')
             ->selectRaw('COUNT(*) as total')
@@ -61,7 +63,7 @@ class ControlController extends Controller
         $overdue = (clone $base)->whereNotNull('due_at')->where('due_at','<',now())->orderBy('due_at')->limit(100)->get();
         $review = Task::with(['assignee.department','creator'])->whereIn('assigned_to',$ids)->where('status','review')->oldest('updated_at')->limit(100)->get();
         $today = (clone $base)->whereBetween('due_at',[today()->startOfDay(),today()->endOfDay()])->orderBy('due_at')->limit(100)->get();
-        $tomorrow = (clone $base)->whereBetween('due_at',[today()->addDay()->startOfDay(),today()->addDay()->endOfDay()])->orderBy('due_at')->limit(100)->get();
+        $tomorrow = (clone $base)->whereBetween('due_at',[today()->copy()->addDay()->startOfDay(),today()->copy()->addDay()->endOfDay()])->orderBy('due_at')->limit(100)->get();
         $stale = (clone $base)->where('updated_at','<',now()->subDays(3))->orderBy('updated_at')->limit(100)->get();
 
         $serialize = fn($tasks) => $tasks->map(function(Task $task){
