@@ -18,7 +18,7 @@ class TaskController extends Controller
     public function page(Request $request)
     {
         $ids = app(AccessService::class)->userIds($request->user(), true);
-        $users = User::whereIn('id', $ids)->where('is_active', true)->orderBy('last_name')->orderBy('first_name')->get();
+        $users = User::whereIn('id', $ids)->where('is_active', true)->whereNull('archived_at')->orderBy('last_name')->orderBy('first_name')->get();
         return view('tasks.index', compact('users'));
     }
 
@@ -26,7 +26,8 @@ class TaskController extends Controller
     {
         $user = $request->user();
         $ids = app(AccessService::class)->userIds($user, true);
-        $q = Task::with(['assignee.department','creator','plan'])
+        $q = Task::with(['assignee.department','creator','plan','tags','blockers:id,title,status'])
+            ->whereNull('archived_at')
             ->where(function ($w) use ($ids, $user) {
                 $w->whereIn('assigned_to', $ids)->orWhere('created_by', $user->id);
             });
@@ -38,6 +39,7 @@ class TaskController extends Controller
         }
         if ($request->filled('status')) $q->where('status', $request->status);
         if ($request->filled('priority')) $q->where('priority', $request->priority);
+        if ($request->filled('tag_id')) $q->whereHas('tags',fn($t)=>$t->where('task_tags.id',$request->integer('tag_id')));
         if ($request->filled('q')) $q->where(function($w) use ($request){ $w->where('title','like','%'.$request->q.'%')->orWhere('description','like','%'.$request->q.'%'); });
         if ($request->boolean('overdue')) $q->whereNotIn('status',['completed','cancelled'])->where('due_at','<',now());
         return response()->json($q->orderByRaw("CASE WHEN due_at IS NULL THEN 1 ELSE 0 END")->orderBy('due_at')->latest('id')->paginate(30));
@@ -48,7 +50,8 @@ class TaskController extends Controller
         $this->authorizeTask($request, $task);
         return response()->json($task->load([
             'assignee.department','creator','plan','comments.user','events.user','attachments.user',
-            'checklistItems.completedBy','deadlineChanges.user'
+            'checklistItems.completedBy','deadlineChanges.user','subtasks.assignee.department','parent',
+            'tags','blockers.assignee.department','blockedTasks.assignee.department'
         ]));
     }
 
@@ -103,66 +106,49 @@ class TaskController extends Controller
                     'Срок изменён: '.($oldDueAt?->format('d.m.Y H:i') ?? 'не задан').' → '.($newDueAt?->format('d.m.Y H:i') ?? 'без срока').'. Причина: '.$reason);
             }
             unset($data['deadline_reason']);
-        } else {
-            unset($data['deadline_reason']);
-        }
+        } else unset($data['deadline_reason']);
 
         if (isset($data['progress']) && $data['progress'] > 0 && !$task->started_at) $data['started_at'] = now();
         $task->update($data);
         $this->event($task, $request->user()->id, 'updated', $oldStatus, $task->status, 'Изменены данные задачи');
-        return response()->json(['ok'=>true,'task'=>$task->fresh()->load(['assignee.department','creator','checklistItems','deadlineChanges.user'])]);
+        return response()->json(['ok'=>true,'task'=>$task->fresh()->load(['assignee.department','creator','checklistItems','deadlineChanges.user','tags','blockers'])]);
     }
 
     public function addChecklistItem(Request $request, Task $task)
     {
-        $this->authorizeTask($request, $task);
-        abort_unless($this->canManageTask($request, $task), 403);
+        $this->authorizeTask($request, $task); abort_unless($this->canManageTask($request, $task), 403);
         abort_if(in_array($task->status,['completed','cancelled'],true),422,'Нельзя менять чек-лист закрытой задачи');
         $data=$request->validate(['title'=>'required|string|max:255']);
-        $item=TaskChecklistItem::create([
-            'task_id'=>$task->id,'title'=>$data['title'],
-            'sort_order'=>(int)$task->checklistItems()->max('sort_order')+1,
-        ]);
-        $this->recalculateChecklistProgress($task);
-        $this->event($task,$request->user()->id,'checklist_added',$task->status,$task->status,'Добавлен пункт чек-листа: '.$item->title);
+        $item=TaskChecklistItem::create(['task_id'=>$task->id,'title'=>$data['title'],'sort_order'=>(int)$task->checklistItems()->max('sort_order')+1]);
+        $this->recalculateChecklistProgress($task); $this->event($task,$request->user()->id,'checklist_added',$task->status,$task->status,'Добавлен пункт чек-листа: '.$item->title);
         return response()->json(['ok'=>true,'item'=>$item],201);
     }
 
     public function toggleChecklistItem(Request $request, Task $task, TaskChecklistItem $item)
     {
-        $this->authorizeTask($request, $task);
-        abort_unless($item->task_id===$task->id,404);
+        $this->authorizeTask($request, $task); abort_unless($item->task_id===$task->id,404);
         abort_if(in_array($task->status,['completed','cancelled'],true),422,'Нельзя менять чек-лист закрытой задачи');
         abort_unless($task->assigned_to === $request->user()->id || $this->canManageTask($request, $task), 403);
         $done=$request->boolean('is_done');
-        $item->update([
-            'is_done'=>$done,
-            'completed_by'=>$done?$request->user()->id:null,
-            'completed_at'=>$done?now():null,
-        ]);
-        $this->recalculateChecklistProgress($task);
-        $this->event($task,$request->user()->id,'checklist_toggled',$task->status,$task->status,($done?'Выполнен: ':'Возвращён: ').$item->title);
+        $item->update(['is_done'=>$done,'completed_by'=>$done?$request->user()->id:null,'completed_at'=>$done?now():null]);
+        $this->recalculateChecklistProgress($task); $this->event($task,$request->user()->id,'checklist_toggled',$task->status,$task->status,($done?'Выполнен: ':'Возвращён: ').$item->title);
         return response()->json(['ok'=>true,'item'=>$item->fresh(),'progress'=>$task->fresh()->progress]);
     }
 
     public function changeDeadline(Request $request, Task $task)
     {
-        $this->authorizeTask($request, $task);
-        abort_unless($this->canManageTask($request, $task), 403);
+        $this->authorizeTask($request, $task); abort_unless($this->canManageTask($request, $task), 403);
         $data=$request->validate(['due_at'=>'nullable|date','reason'=>'required|string|min:3|max:5000']);
-        $old=$task->due_at?->copy();
-        $new=$data['due_at']?\Carbon\Carbon::parse($data['due_at']):null;
+        $old=$task->due_at?->copy(); $new=$data['due_at']?\Carbon\Carbon::parse($data['due_at']):null;
         TaskDeadlineChange::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'old_due_at'=>$old,'new_due_at'=>$new,'reason'=>$data['reason']]);
         $task->update(['due_at'=>$new]);
-        $this->event($task,$request->user()->id,'deadline_changed',$task->status,$task->status,
-            'Срок изменён: '.($old?->format('d.m.Y H:i')??'не задан').' → '.($new?->format('d.m.Y H:i')??'без срока').'. Причина: '.$data['reason']);
+        $this->event($task,$request->user()->id,'deadline_changed',$task->status,$task->status,'Срок изменён: '.($old?->format('d.m.Y H:i')??'не задан').' → '.($new?->format('d.m.Y H:i')??'без срока').'. Причина: '.$data['reason']);
         return response()->json(['ok'=>true,'task'=>$task->fresh(),'change'=>$task->deadlineChanges()->with('user')->first()]);
     }
 
     public function comment(Request $request, Task $task)
     {
-        $this->authorizeTask($request, $task);
-        $data = $request->validate(['body'=>'required|string|max:5000']);
+        $this->authorizeTask($request, $task); $data = $request->validate(['body'=>'required|string|max:5000']);
         $comment = TaskComment::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'body'=>$data['body']]);
         $this->event($task, $request->user()->id, 'comment', $task->status, $task->status, 'Добавлен комментарий');
         $recipients = array_unique(array_filter([$task->assigned_to, $task->created_by]));
@@ -172,105 +158,85 @@ class TaskController extends Controller
 
     public function dashboardComplete(Request $request, Task $task)
     {
-        abort_unless($task->assigned_to === $request->user()->id, 403);
-        abort_if(in_array($task->status, ['completed','cancelled'], true), 422, 'Задача уже закрыта');
-        abort_if($task->status === 'review', 422, 'Задача уже отправлена на проверку');
-        $remaining=$task->checklistItems()->where('is_done',false)->count();
-        abort_if($remaining>0,422,'Сначала выполните все пункты чек-листа');
-
-        $data = $request->validate(['comment'=>'nullable|string|max:5000']);
-        $message = trim((string)($data['comment'] ?? ''));
-        $from = $task->status;
-
+        abort_unless($task->assigned_to === $request->user()->id, 403); $this->assertCompletable($task);
+        abort_if(in_array($task->status, ['completed','cancelled'], true), 422, 'Задача уже закрыта'); abort_if($task->status === 'review', 422, 'Задача уже отправлена на проверку');
+        abort_if($task->checklistItems()->where('is_done',false)->count()>0,422,'Сначала выполните все пункты чек-листа');
+        $data = $request->validate(['comment'=>'nullable|string|max:5000']); $message = trim((string)($data['comment'] ?? '')); $from = $task->status;
         if ($task->created_by === $request->user()->id) {
             $task->update(['status'=>'completed','progress'=>100,'started_at'=>$task->started_at ?: now(),'completed_at'=>now(),'result'=>$message !== '' ? $message : ($task->result ?: 'Выполнено')]);
             if ($message !== '') TaskComment::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'body'=>$message]);
             $this->event($task, $request->user()->id, 'completed_self', $from, 'completed', $message !== '' ? $message : 'Личная задача выполнена');
             return response()->json(['ok'=>true,'mode'=>'completed','task'=>$task->fresh()]);
         }
-
         abort_if($message === '', 422, 'Перед отправкой руководителю укажите краткий комментарий о выполнении');
         $task->update(['status'=>'review','progress'=>100,'started_at'=>$task->started_at ?: now(),'completed_at'=>null,'result'=>$message]);
         TaskComment::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'body'=>'Отчёт сотрудника: '.$message]);
-        $this->event($task, $request->user()->id, 'submitted_for_review', $from, 'review', $message);
-        $task->loadMissing('assignee');
-        $recipients = array_unique(array_filter([$task->created_by, $task->assignee?->manager_id]));
-        foreach ($recipients as $userId) if ((int)$userId !== $request->user()->id) $this->notify((int)$userId, $task, 'task_review', 'Задача ожидает проверки', $task->title);
+        $this->event($task, $request->user()->id, 'submitted_for_review', $from, 'review', $message); $task->loadMissing('assignee');
+        foreach (array_unique(array_filter([$task->created_by, $task->assignee?->manager_id])) as $userId) if ((int)$userId !== $request->user()->id) $this->notify((int)$userId, $task, 'task_review', 'Задача ожидает проверки', $task->title);
         return response()->json(['ok'=>true,'mode'=>'review','task'=>$task->fresh()]);
     }
 
     public function submitReview(Request $request, Task $task)
     {
-        abort_unless($task->assigned_to === $request->user()->id, 403);
+        abort_unless($task->assigned_to === $request->user()->id, 403); $this->assertCompletable($task);
         abort_unless(in_array($task->status,['new','in_progress'],true),422,'Эту задачу нельзя отправить на проверку');
         abort_if($task->checklistItems()->where('is_done',false)->exists(),422,'Сначала выполните все пункты чек-листа');
-        $data = $request->validate(['result'=>'required|string|min:3|max:10000','progress'=>'nullable|integer|min:1|max:100']);
-        $from = $task->status;
+        $data = $request->validate(['result'=>'required|string|min:3|max:10000','progress'=>'nullable|integer|min:1|max:100']); $from = $task->status;
         $task->update(['result'=>$data['result'],'progress'=>100,'status'=>'review','started_at'=>$task->started_at ?: now(),'completed_at'=>null]);
-        $this->event($task, $request->user()->id, 'submitted_for_review', $from, 'review', 'Сотрудник отправил отчёт на проверку');
-        $task->loadMissing('assignee');
-        $recipients = array_unique(array_filter([$task->created_by, $task->assignee?->manager_id]));
-        foreach ($recipients as $userId) if ((int)$userId !== $request->user()->id) $this->notify((int)$userId, $task, 'task_review', 'Задача ожидает проверки', $task->title);
+        $this->event($task, $request->user()->id, 'submitted_for_review', $from, 'review', 'Сотрудник отправил отчёт на проверку'); $task->loadMissing('assignee');
+        foreach (array_unique(array_filter([$task->created_by, $task->assignee?->manager_id])) as $userId) if ((int)$userId !== $request->user()->id) $this->notify((int)$userId, $task, 'task_review', 'Задача ожидает проверки', $task->title);
         return response()->json(['ok'=>true,'task'=>$task->fresh()]);
     }
 
     public function accept(Request $request, Task $task)
     {
-        abort_unless($this->canManageTask($request, $task), 403);
-        abort_unless($task->status === 'review', 422, 'Задача не находится на проверке');
-        $data = $request->validate(['message'=>'nullable|string|max:5000']);
+        abort_unless($this->canManageTask($request, $task), 403); $this->assertCompletable($task);
+        abort_unless($task->status === 'review', 422, 'Задача не находится на проверке'); $data = $request->validate(['message'=>'nullable|string|max:5000']);
         $task->update(['status'=>'completed','progress'=>100,'completed_at'=>now()]);
         if (!empty($data['message'])) TaskComment::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'body'=>$data['message']]);
-        $this->event($task, $request->user()->id, 'accepted', 'review', 'completed', $data['message'] ?? 'Результат принят руководителем');
-        $this->notify($task->assigned_to, $task, 'task_accepted', 'Задача принята', $task->title);
+        $this->event($task, $request->user()->id, 'accepted', 'review', 'completed', $data['message'] ?? 'Результат принят руководителем'); $this->notify($task->assigned_to, $task, 'task_accepted', 'Задача принята', $task->title);
         return response()->json(['ok'=>true,'task'=>$task->fresh()]);
     }
 
     public function reject(Request $request, Task $task)
     {
-        abort_unless($this->canManageTask($request, $task), 403);
-        abort_unless($task->status === 'review', 422, 'Задача не находится на проверке');
+        abort_unless($this->canManageTask($request, $task), 403); abort_unless($task->status === 'review', 422, 'Задача не находится на проверке');
         $data = $request->validate(['message'=>'required|string|min:3|max:5000']);
         $task->update(['status'=>'in_progress','completed_at'=>null,'progress'=>min($task->progress, 99)]);
         TaskComment::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'body'=>'Возврат на доработку: '.$data['message']]);
-        $this->event($task, $request->user()->id, 'rejected', 'review', 'in_progress', $data['message']);
-        $this->notify($task->assigned_to, $task, 'task_rejected', 'Задача возвращена на доработку', $data['message']);
+        $this->event($task, $request->user()->id, 'rejected', 'review', 'in_progress', $data['message']); $this->notify($task->assigned_to, $task, 'task_rejected', 'Задача возвращена на доработку', $data['message']);
         return response()->json(['ok'=>true,'task'=>$task->fresh()]);
+    }
+
+    private function assertCompletable(Task $task): void
+    {
+        $blocking=$task->blockers()->whereNotIn('status',['completed','cancelled'])->pluck('title');
+        abort_if($blocking->isNotEmpty(),422,'Задача заблокирована. Сначала завершите: '.$blocking->join(', '));
+        $openSubtasks=$task->subtasks()->whereNotIn('status',['completed','cancelled'])->pluck('title');
+        abort_if($openSubtasks->isNotEmpty(),422,'Сначала завершите подзадачи: '.$openSubtasks->join(', '));
     }
 
     private function recalculateChecklistProgress(Task $task): void
     {
-        $total=$task->checklistItems()->count();
-        if ($total===0) return;
-        $done=$task->checklistItems()->where('is_done',true)->count();
-        $progress=(int)round(($done/$total)*100);
-        $task->update(['progress'=>$progress,'started_at'=>$progress>0?($task->started_at?:now()):$task->started_at]);
+        $total=$task->checklistItems()->count(); if ($total===0) return; $done=$task->checklistItems()->where('is_done',true)->count();
+        $progress=(int)round(($done/$total)*100); $task->update(['progress'=>$progress,'started_at'=>$progress>0?($task->started_at?:now()):$task->started_at]);
     }
 
     private function authorizeTask(Request $request, Task $task): void
     {
-        $user = $request->user();
-        if ((int)$task->assigned_to === (int)$user->id || (int)$task->created_by === (int)$user->id) return;
-        $ids = app(AccessService::class)->userIds($user, true);
-        abort_unless($user->isManager() && $ids->contains((int)$task->assigned_to), 403);
+        $user = $request->user(); if ((int)$task->assigned_to === (int)$user->id || (int)$task->created_by === (int)$user->id) return;
+        $ids = app(AccessService::class)->userIds($user, true); abort_unless($user->isManager() && $ids->contains((int)$task->assigned_to), 403);
     }
 
     private function canManageTask(Request $request, Task $task): bool
     {
-        $user = $request->user();
-        if ($user->isAdmin() || (int)$task->created_by === (int)$user->id) return true;
-        if (!$user->isManager()) return false;
-        $assignee = User::find($task->assigned_to);
-        return $assignee ? app(AccessService::class)->canManageUser($user, $assignee) : false;
+        $user = $request->user(); if ($user->isAdmin() || (int)$task->created_by === (int)$user->id) return true; if (!$user->isManager()) return false;
+        $assignee = User::find($task->assigned_to); return $assignee ? app(AccessService::class)->canManageUser($user, $assignee) : false;
     }
 
     private function event(Task $task, int $userId, string $type, ?string $from, ?string $to, ?string $message = null): void
-    {
-        TaskEvent::create(['task_id'=>$task->id,'user_id'=>$userId,'type'=>$type,'from_status'=>$from,'to_status'=>$to,'message'=>$message]);
-    }
+    { TaskEvent::create(['task_id'=>$task->id,'user_id'=>$userId,'type'=>$type,'from_status'=>$from,'to_status'=>$to,'message'=>$message]); }
 
     private function notify(int $userId, Task $task, string $type, string $title, ?string $body = null): void
-    {
-        CrmNotification::create(['user_id'=>$userId,'task_id'=>$task->id,'type'=>$type,'title'=>$title,'body'=>$body,'url'=>route('tasks.page', ['task'=>$task->id], false)]);
-    }
+    { CrmNotification::create(['user_id'=>$userId,'task_id'=>$task->id,'type'=>$type,'title'=>$title,'body'=>$body,'url'=>route('tasks.page', ['task'=>$task->id], false)]); }
 }
