@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
@@ -46,6 +47,16 @@ return new class extends Migration {
             $table->foreignId('task_tag_id')->constrained('task_tags')->cascadeOnDelete();
             $table->primary(['task_id','task_tag_id']);
         });
+        $now=now();
+        DB::table('task_tags')->insert([
+            ['name'=>'ОМС','slug'=>'oms','is_active'=>1,'created_at'=>$now,'updated_at'=>$now],
+            ['name'=>'ТФОМС','slug'=>'tfoms','is_active'=>1,'created_at'=>$now,'updated_at'=>$now],
+            ['name'=>'ИТ','slug'=>'it','is_active'=>1,'created_at'=>$now,'updated_at'=>$now],
+            ['name'=>'Кадры','slug'=>'kadry','is_active'=>1,'created_at'=>$now,'updated_at'=>$now],
+            ['name'=>'Приказ','slug'=>'prikaz','is_active'=>1,'created_at'=>$now,'updated_at'=>$now],
+            ['name'=>'Срочно','slug'=>'srochno','is_active'=>1,'created_at'=>$now,'updated_at'=>$now],
+            ['name'=>'Отчётность','slug'=>'otchetnost','is_active'=>1,'created_at'=>$now,'updated_at'=>$now],
+        ]);
 
         Schema::create('entity_comments', function (Blueprint $table) {
             $table->id();
