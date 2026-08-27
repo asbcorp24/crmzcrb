@@ -14,7 +14,7 @@ return new class extends Migration {
             $table->string('endpoint_hash', 64)->unique();
             $table->text('public_key');
             $table->text('auth_token');
-            $table->string('content_encoding', 32)->default('aesgcm');
+            $table->string('content_encoding', 32)->default('aes128gcm');
             $table->string('user_agent', 500)->nullable();
             $table->dateTime('last_used_at')->nullable();
             $table->timestamps();
