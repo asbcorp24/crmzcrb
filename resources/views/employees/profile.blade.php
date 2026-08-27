@@ -6,7 +6,8 @@
   <a href="{{ route('employees.page') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Сотрудники</a>
   <a href="{{ route('tasks.page',['assigned_to'=>$employee->id]) }}" class="btn btn-outline-primary"><i class="bi bi-check2-square me-1"></i>Все задачи</a>
   <a href="{{ route('plans.page',['user_id'=>$employee->id]) }}" class="btn btn-outline-primary"><i class="bi bi-calendar3 me-1"></i>Планы</a>
-  @if(auth()->user()->isManager())<a href="{{ route('staffing.page') }}" class="btn btn-outline-primary"><i class="bi bi-person-workspace me-1"></i>Штатное расписание</a>@endif
+  <button class="btn btn-outline-primary" onclick="openEntityCollab('user',{{ $employee->id }},'Материалы сотрудника: {{ addslashes($employee->full_name) }}')"><i class="bi bi-chat-paperclip me-1"></i>Файлы и комментарии</button>
+  @if(auth()->user()->isManager())<a href="{{ route('staffing.page') }}" class="btn btn-outline-primary"><i class="bi bi-person-workspace me-1"></i>Штатное расписание</a>@if(auth()->id() !== $employee->id)<button class="btn btn-outline-secondary ms-lg-auto" onclick="archiveEntity('user',{{ $employee->id }})"><i class="bi bi-archive me-1"></i>В архив</button>@endif @endif
 </div>
 
 <div class="row g-3 mb-4">
