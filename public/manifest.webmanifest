@@ -1,0 +1,25 @@
+{
+  "name": "CRM ЗЦРБ",
+  "short_name": "CRM ЗЦРБ",
+  "description": "Управление сотрудниками, задачами, планами и поручениями ЗЦРБ",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f6f9",
+  "theme_color": "#0d6efd",
+  "lang": "ru-RU",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {"name":"Задачи","short_name":"Задачи","url":"/tasks","icons":[{"src":"/pwa-icon.svg","sizes":"any","type":"image/svg+xml"}]},
+    {"name":"Календарь","short_name":"Календарь","url":"/calendar","icons":[{"src":"/pwa-icon.svg","sizes":"any","type":"image/svg+xml"}]},
+    {"name":"Поиск","short_name":"Поиск","url":"/search","icons":[{"src":"/pwa-icon.svg","sizes":"any","type":"image/svg+xml"}]}
+  ]
+}
