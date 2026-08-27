@@ -28,6 +28,7 @@ let pushReg=null,pushSub=null,pushPublicKey=null;
 function b64ToUint8Array(base64){const padding='='.repeat((4-base64.length%4)%4),safe=(base64+padding).replace(/-/g,'+').replace(/_/g,'/'),raw=atob(safe);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)))}
 function setPushState(text,type='light'){$('#pushStatus').attr('class',`alert alert-${type} border mb-3`).text(text)}
 async function refreshPushState(){
+  if(!window.isSecureContext){setPushState('Web Push требует HTTPS. Откройте CRM по защищённому адресу https://...','danger');return}
   if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){setPushState('Этот браузер не поддерживает Web Push. Используйте актуальный Chrome/Edge/Android.','warning');return}
   try{
     const status=await $.get('{{ route('push.status') }}');
@@ -46,7 +47,7 @@ $('#enablePush').on('click',async function(){
     pushReg=await navigator.serviceWorker.ready;
     pushSub=await pushReg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToUint8Array(pushPublicKey)});
     const json=pushSub.toJSON();
-    await $.post('{{ route('push.subscribe') }}',{endpoint:pushSub.endpoint,keys:json.keys,contentEncoding:(PushManager.supportedContentEncodings||['aesgcm'])[0]});
+    await $.post('{{ route('push.subscribe') }}',{endpoint:pushSub.endpoint,keys:json.keys,contentEncoding:(PushManager.supportedContentEncodings||['aes128gcm'])[0]});
     await refreshPushState();
   }catch(e){setPushState('Не удалось включить push: '+e,'danger')}
 });
