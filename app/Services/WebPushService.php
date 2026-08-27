@@ -29,7 +29,8 @@ class WebPushService
                 'privateKey' => config('webpush.vapid.private_key'),
             ],
         ]);
-        $webPush->setDefaultOptions(['TTL'=>86400,'urgency'=>'normal','topic'=>'crm-'.($notification->type ?: 'notification')]);
+        $topic='crm-'.substr(hash('sha256',(string)($notification->type ?: 'notification')),0,20);
+        $webPush->setDefaultOptions(['TTL'=>86400,'urgency'=>'normal','topic'=>$topic]);
 
         $payload = json_encode([
             'title' => $notification->title ?: 'CRM ЗЦРБ',
@@ -46,7 +47,7 @@ class WebPushService
                     'endpoint' => $row->endpoint,
                     'publicKey' => $row->public_key,
                     'authToken' => $row->auth_token,
-                    'contentEncoding' => $row->content_encoding ?: 'aesgcm',
+                    'contentEncoding' => $row->content_encoding ?: 'aes128gcm',
                 ]);
                 $report = $webPush->sendOneNotification($subscription, $payload);
                 if ($report->isSuccess()) {
