@@ -2,7 +2,7 @@
 @section('title',$department->name.' — 360°')
 @section('header','Подразделение 360°')
 @section('content')
-<div class="card border-0 shadow-sm mb-4"><div class="card-body"><div class="d-flex gap-3 align-items-start flex-wrap"><div class="flex-grow-1"><div class="text-muted small">{{ $department->short_name }}</div><h2 class="mb-1">{{ $department->name }}</h2><div class="text-muted">{{ $department->parent?->name }}</div></div><a href="{{ route('departments.page') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>К структуре</a></div></div></div>
+<div class="card border-0 shadow-sm mb-4"><div class="card-body"><div class="d-flex gap-3 align-items-start flex-wrap"><div class="flex-grow-1"><div class="text-muted small">{{ $department->short_name }}</div><h2 class="mb-1">{{ $department->name }}</h2><div class="text-muted">{{ $department->parent?->name }}</div></div><button class="btn btn-outline-primary" onclick="openEntityCollab('department',{{ $department->id }},'Материалы подразделения: {{ addslashes($department->name) }}')"><i class="bi bi-chat-paperclip me-1"></i>Файлы и комментарии</button><a href="{{ route('departments.page') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>К структуре</a></div></div></div>
 
 <div class="row g-3 mb-4">
 @foreach([
