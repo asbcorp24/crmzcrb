@@ -16,7 +16,7 @@ class CalendarController extends Controller
         $user = $request->user();
         $access = app(AccessService::class);
         $ids = $access->userIds($user, true);
-        $users = User::whereIn('id',$ids)->where('is_active',true)->orderBy('last_name')->orderBy('first_name')->get();
+        $users = User::whereIn('id',$ids)->where('is_active',true)->whereNull('archived_at')->orderBy('last_name')->orderBy('first_name')->get();
         $departments = Department::whereIn('id',$access->departmentIds($user))->where('is_active',true)->orderBy('name')->get();
         return view('calendar.index', compact('users', 'departments'));
     }
@@ -29,8 +29,8 @@ class CalendarController extends Controller
         $start = $request->date('start')?->startOfDay() ?? now()->startOfMonth();
         $end = $request->date('end')?->endOfDay() ?? now()->endOfMonth();
 
-        $taskQuery = Task::with(['assignee.department'])->whereIn('assigned_to',$ids)->whereNotNull('due_at')->whereBetween('due_at', [$start, $end]);
-        $planQuery = Plan::with(['user.department'])->whereIn('user_id',$ids)->whereBetween('period_end', [$start->toDateString(), $end->toDateString()]);
+        $taskQuery = Task::with(['assignee.department'])->whereNull('archived_at')->whereIn('assigned_to',$ids)->whereNotNull('due_at')->whereBetween('due_at', [$start, $end]);
+        $planQuery = Plan::with(['user.department'])->whereNull('archived_at')->whereIn('user_id',$ids)->whereBetween('period_end', [$start->toDateString(), $end->toDateString()]);
 
         if ($user->isManager() && $request->filled('employee_id')) {
             $employeeId = $request->integer('employee_id');
@@ -47,40 +47,20 @@ class CalendarController extends Controller
         }
 
         if ($request->filled('status')) $taskQuery->where('status', $request->string('status')->toString());
-
-        $kind = $request->input('kind', 'all');
-        $events = [];
-        $showNames = $user->isManager();
+        $kind = $request->input('kind', 'all'); $events = []; $showNames = $user->isManager();
 
         if ($kind !== 'plans') {
             foreach ($taskQuery->get() as $task) {
-                $assignee = $task->assignee?->full_name ?? 'Без исполнителя';
-                $department = $task->assignee?->department?->name;
-                $events[] = [
-                    'id' => 'task-'.$task->id,
-                    'title' => $showNames ? $assignee.' — '.$task->title : $task->title,
-                    'start' => $task->due_at->toIso8601String(),
-                    'url' => route('tasks.page', ['task' => $task->id]),
-                    'extendedProps' => ['kind'=>'task','status'=>$task->status,'priority'=>$task->priority,'assignee'=>$assignee,'department'=>$department,'deadline'=>$task->due_at->format('d.m.Y H:i'),'rawTitle'=>$task->title,'overdue'=>$task->is_overdue],
-                ];
+                $assignee = $task->assignee?->full_name ?? 'Без исполнителя'; $department = $task->assignee?->department?->name;
+                $events[] = ['id'=>'task-'.$task->id,'title'=>$showNames ? $assignee.' — '.$task->title : $task->title,'start'=>$task->due_at->toIso8601String(),'url'=>route('tasks.page',['task'=>$task->id]),'extendedProps'=>['kind'=>'task','status'=>$task->status,'priority'=>$task->priority,'assignee'=>$assignee,'department'=>$department,'deadline'=>$task->due_at->format('d.m.Y H:i'),'rawTitle'=>$task->title,'overdue'=>$task->is_overdue]];
             }
         }
-
         if ($kind !== 'tasks') {
             foreach ($planQuery->get() as $plan) {
-                $assignee = $plan->user?->full_name ?? 'Без исполнителя';
-                $department = $plan->user?->department?->name;
-                $events[] = [
-                    'id' => 'plan-'.$plan->id,
-                    'title' => $showNames ? $assignee.' — План: '.$plan->title : 'План: '.$plan->title,
-                    'start' => $plan->period_end->toDateString(),
-                    'url' => route('plans.page', ['user_id' => $plan->user_id]),
-                    'allDay' => true,
-                    'extendedProps' => ['kind'=>'plan','status'=>$plan->status,'assignee'=>$assignee,'department'=>$department,'deadline'=>$plan->period_end->format('d.m.Y'),'rawTitle'=>$plan->title,'overdue'=>$plan->period_end->isPast() && !in_array($plan->status,['completed','cancelled'],true)],
-                ];
+                $assignee = $plan->user?->full_name ?? 'Без исполнителя'; $department = $plan->user?->department?->name;
+                $events[] = ['id'=>'plan-'.$plan->id,'title'=>$showNames ? $assignee.' — План: '.$plan->title : 'План: '.$plan->title,'start'=>$plan->period_end->toDateString(),'url'=>route('plans.page',['user_id'=>$plan->user_id]),'allDay'=>true,'extendedProps'=>['kind'=>'plan','status'=>$plan->status,'assignee'=>$assignee,'department'=>$department,'deadline'=>$plan->period_end->format('d.m.Y'),'rawTitle'=>$plan->title,'overdue'=>$plan->period_end->isPast() && !in_array($plan->status,['completed','cancelled'],true)]];
             }
         }
-
         return response()->json($events);
     }
 }
