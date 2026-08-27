@@ -79,8 +79,9 @@ class AdvancedTaskController extends Controller
     public function addDependency(Request $request, Task $task)
     {
         $this->authorizeManage($request,$task); $data=$request->validate(['blocked_by_task_id'=>'required|exists:tasks,id']);
-        $blocker=Task::findOrFail($data['blocked_by_task_id']); $this->authorizeView($request,$blocker); abort_if($blocker->id===$task->id,422,'Задача не может зависеть сама от себя');
-        abort_if($blocker->blockers()->where('tasks.id',$task->id)->exists(),422,'Нельзя создать прямую циклическую зависимость');
+        $blocker=Task::findOrFail($data['blocked_by_task_id']); $this->authorizeView($request,$blocker);
+        abort_if($blocker->id===$task->id,422,'Задача не может зависеть сама от себя');
+        abort_if($this->wouldCreateCycle($task,$blocker),422,'Нельзя создать циклическую зависимость задач');
         $task->blockers()->syncWithoutDetaching([$blocker->id=>['created_by'=>$request->user()->id]]); return response()->json(['ok'=>true]);
     }
 
@@ -95,6 +96,18 @@ class AdvancedTaskController extends Controller
 
     public function archive(Request $request, Task $task)
     { $this->authorizeManage($request,$task); abort_unless(in_array($task->status,['completed','cancelled'],true),422,'В архив можно отправить только завершённую или отменённую задачу'); $task->update(['archived_at'=>now(),'archived_by'=>$request->user()->id]); return response()->json(['ok'=>true]); }
+
+    private function wouldCreateCycle(Task $task,Task $blocker):bool
+    {
+        $target=(int)$task->id; $frontier=collect([(int)$blocker->id]); $seen=[];
+        while($frontier->isNotEmpty()){
+            if($frontier->contains($target))return true;
+            $ids=$frontier->reject(fn($id)=>isset($seen[(int)$id]))->map(fn($id)=>(int)$id)->values();
+            if($ids->isEmpty())break; foreach($ids as $id)$seen[$id]=true;
+            $frontier=DB::table('task_dependencies')->whereIn('task_id',$ids)->pluck('blocked_by_task_id')->map(fn($id)=>(int)$id)->unique()->values();
+        }
+        return false;
+    }
 
     private function authorizeView(Request $request,Task $task):void{$u=$request->user();if($u->isAdmin()||$task->assigned_to===$u->id||$task->created_by===$u->id)return;abort_unless($u->isManager()&&app(AccessService::class)->userIds($u,true)->contains((int)$task->assigned_to),403);}
     private function authorizeManage(Request $request,Task $task):void{$u=$request->user();if($u->isAdmin()||$task->created_by===$u->id)return;abort_unless($u->isManager()&&app(AccessService::class)->userIds($u,false)->contains((int)$task->assigned_to),403);}
