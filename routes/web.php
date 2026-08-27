@@ -18,6 +18,7 @@ use App\Http\Controllers\MeetingController;
 use App\Http\Controllers\MeetingToolsController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PlanController;
+use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\StaffingController;
@@ -37,6 +38,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/help/{section?}', [HelpController::class, 'page'])->name('help.page');
+
+    Route::get('/pwa/settings', [PushSubscriptionController::class, 'page'])->name('pwa.settings');
+    Route::get('/ajax/push/status', [PushSubscriptionController::class, 'status'])->name('push.status');
+    Route::post('/ajax/push/subscribe', [PushSubscriptionController::class, 'store'])->name('push.subscribe');
+    Route::delete('/ajax/push/unsubscribe', [PushSubscriptionController::class, 'destroy'])->name('push.unsubscribe');
+    Route::post('/ajax/push/test', [PushSubscriptionController::class, 'test'])->name('push.test');
 
     Route::get('/search', [SearchController::class, 'page'])->name('search.page');
     Route::get('/ajax/search', [SearchController::class, 'ajax'])->name('search.ajax');
