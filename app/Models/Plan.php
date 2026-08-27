@@ -8,20 +8,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Plan extends Model
 {
-    protected $fillable = ['user_id','created_by','title','description','period_start','period_end','period_type','status','progress'];
-    protected $casts = ['period_start'=>'date','period_end'=>'date'];
+    protected $fillable = ['user_id','created_by','title','description','period_start','period_end','period_type','status','progress','archived_at','archived_by'];
+    protected $casts = ['period_start'=>'date','period_end'=>'date','archived_at'=>'datetime'];
 
     public function user(): BelongsTo { return $this->belongsTo(User::class); }
     public function creator(): BelongsTo { return $this->belongsTo(User::class, 'created_by'); }
+    public function archivedBy(): BelongsTo { return $this->belongsTo(User::class, 'archived_by'); }
     public function tasks(): HasMany { return $this->hasMany(Task::class); }
 
-    /**
-     * Пересчитать прогресс плана по фактическому состоянию его задач.
-     * Выполненная задача всегда считается как 100%, остальные — по полю progress.
-     */
     public function recalculateProgress(): int
     {
-        $tasks = $this->tasks()->get(['status', 'progress']);
+        $tasks = $this->tasks()->whereNull('archived_at')->get(['status', 'progress']);
         $progress = $tasks->isEmpty()
             ? 0
             : (int) round($tasks->avg(fn (Task $task) => $task->status === 'completed' ? 100 : (int) $task->progress));
@@ -29,7 +26,6 @@ class Plan extends Model
         if ((int) $this->progress !== $progress) {
             $this->forceFill(['progress' => $progress])->saveQuietly();
         }
-
         return $progress;
     }
 
