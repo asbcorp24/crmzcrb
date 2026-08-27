@@ -25,7 +25,13 @@ class ArchiveController extends Controller
     {
         abort_unless($request->user()->isManager(),403); $m=$this->resolve($type,$id); $this->authorize($request,$type,$m);
         if($type==='task') abort_unless(in_array($m->status,['completed','cancelled'],true),422,'Сначала завершите или отмените задачу');
-        if($type==='user') $m->is_active=false;
+        if($type==='plan') abort_unless(in_array($m->status,['completed','cancelled'],true),422,'В архив можно отправить только выполненный или отменённый план');
+        if($type==='meeting') abort_unless($m->status==='closed',422,'Сначала закройте протокол совещания');
+        if($type==='user') {
+            abort_if((int)$m->id===(int)$request->user()->id,422,'Нельзя архивировать собственную учётную запись');
+            if(!$request->user()->isAdmin()) abort_if($m->isAdmin(),403,'Архивировать администратора может только администратор');
+            $m->is_active=false;
+        }
         $m->archived_at=now(); $m->archived_by=$request->user()->id; $m->save(); return response()->json(['ok'=>true]);
     }
 
