@@ -1,5 +1,5 @@
-const CACHE = 'crm-zcrb-pwa-v2';
-const STATIC = ['/manifest.webmanifest','/pwa-icon.svg','/offline.html'];
+const CACHE = 'crm-zcrb-pwa-v3';
+const STATIC = ['/manifest.webmanifest','/pwa-icon.svg','/offline.html','/pwa-runtime.js'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(STATIC)));
