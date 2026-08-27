@@ -42,13 +42,16 @@ class PushSubscriptionController extends Controller
             'user_agent'=>mb_strimwidth((string)$request->userAgent(),0,500,''),
             'last_used_at'=>now(),
         ]);
+        $request->session()->put('push_endpoint_hash',$hash);
         return response()->json(['ok'=>true,'id'=>$subscription->id],201);
     }
 
     public function destroy(Request $request)
     {
         $data=$request->validate(['endpoint'=>'required|string|max:4000']);
-        PushSubscription::where('user_id',$request->user()->id)->where('endpoint_hash',hash('sha256',$data['endpoint']))->delete();
+        $hash=hash('sha256',$data['endpoint']);
+        PushSubscription::where('user_id',$request->user()->id)->where('endpoint_hash',$hash)->delete();
+        if($request->session()->get('push_endpoint_hash')===$hash)$request->session()->forget('push_endpoint_hash');
         return response()->json(['ok'=>true]);
     }
 
