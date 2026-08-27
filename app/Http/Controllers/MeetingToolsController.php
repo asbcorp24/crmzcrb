@@ -26,7 +26,7 @@ class MeetingToolsController extends Controller
     public function destroyItem(Request $request,Meeting $meeting,MeetingItem $item)
     {
         $this->authorizeMeeting($request,$meeting); abort_unless($item->meeting_id===$meeting->id,404); abort_if($meeting->status==='closed',422,'Закрытый протокол нельзя изменять');
-        DB::transaction(function()use($request,$item){if($item->task&&!in_array($item->task->status,['completed','cancelled'],true)){$item->task->update(['status'=>'cancelled','completed_at'=>now(),'result'=>'Отменено при удалении поручения из протокола']);TaskEvent::create(['task_id'=>$item->task->id,'user_id'=>$request->user()->id,'type'=>'cancelled','from_status'=>$item->task->getOriginal('status'),'to_status'=>'cancelled','message'=>'Пункт удалён из протокола']);}$item->delete();});
+        DB::transaction(function()use($request,$item){if($item->task&&!in_array($item->task->status,['completed','cancelled'],true)){$task=$item->task;$from=$task->status;$task->update(['status'=>'cancelled','completed_at'=>now(),'result'=>'Отменено при удалении поручения из протокола']);TaskEvent::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'type'=>'cancelled','from_status'=>$from,'to_status'=>'cancelled','message'=>'Пункт удалён из протокола']);}$item->delete();});
         $this->renumber($meeting); return response()->json(['ok'=>true]);
     }
 
