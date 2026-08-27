@@ -4,13 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Task extends Model
 {
-    protected $fillable = ['plan_id','created_by','assigned_to','title','description','priority','status','progress','started_at','due_at','completed_at','result'];
-    protected $casts = ['started_at'=>'datetime','due_at'=>'datetime','completed_at'=>'datetime'];
-    protected $appends = ['is_overdue'];
+    protected $fillable = ['plan_id','parent_task_id','created_by','assigned_to','title','description','priority','status','progress','started_at','due_at','completed_at','archived_at','archived_by','result'];
+    protected $casts = ['started_at'=>'datetime','due_at'=>'datetime','completed_at'=>'datetime','archived_at'=>'datetime'];
+    protected $appends = ['is_overdue','is_blocked'];
 
     protected static function booted(): void
     {
@@ -31,11 +32,8 @@ class Task extends Model
             if ($sub?->substituteUser) $body .= ' Заместитель: '.$sub->substituteUser->full_name.'.';
 
             CrmNotification::create([
-                'user_id'=>$task->created_by,
-                'task_id'=>$task->id,
-                'type'=>'assignee_absent',
-                'title'=>'Исполнитель отсутствует в срок задачи',
-                'body'=>$body,
+                'user_id'=>$task->created_by,'task_id'=>$task->id,'type'=>'assignee_absent',
+                'title'=>'Исполнитель отсутствует в срок задачи','body'=>$body,
                 'url'=>route('tasks.page',['task'=>$task->id],false),
             ]);
         });
@@ -43,19 +41,19 @@ class Task extends Model
         static::updated(function (Task $task) {
             $oldPlanId = (int) ($task->getOriginal('plan_id') ?? 0);
             $newPlanId = (int) ($task->plan_id ?? 0);
-
             if ($oldPlanId && $oldPlanId !== $newPlanId) Plan::recalculateById($oldPlanId);
             if ($newPlanId) Plan::recalculateById($newPlanId);
         });
 
-        static::deleted(function (Task $task) {
-            Plan::recalculateById($task->plan_id);
-        });
+        static::deleted(fn (Task $task) => Plan::recalculateById($task->plan_id));
     }
 
     public function plan(): BelongsTo { return $this->belongsTo(Plan::class); }
+    public function parent(): BelongsTo { return $this->belongsTo(self::class, 'parent_task_id'); }
+    public function subtasks(): HasMany { return $this->hasMany(self::class, 'parent_task_id')->orderBy('due_at'); }
     public function creator(): BelongsTo { return $this->belongsTo(User::class, 'created_by'); }
     public function assignee(): BelongsTo { return $this->belongsTo(User::class, 'assigned_to'); }
+    public function archivedBy(): BelongsTo { return $this->belongsTo(User::class, 'archived_by'); }
     public function comments(): HasMany { return $this->hasMany(TaskComment::class)->latest(); }
     public function events(): HasMany { return $this->hasMany(TaskEvent::class)->latest(); }
     public function attachments(): HasMany { return $this->hasMany(TaskAttachment::class)->latest(); }
@@ -63,9 +61,20 @@ class Task extends Model
     public function deadlineChanges(): HasMany { return $this->hasMany(TaskDeadlineChange::class)->latest(); }
     public function overdueReasons(): HasMany { return $this->hasMany(TaskOverdueReason::class)->latest(); }
     public function delegations(): HasMany { return $this->hasMany(TaskDelegation::class)->latest(); }
+    public function tags(): BelongsToMany { return $this->belongsToMany(TaskTag::class, 'task_tag'); }
+    public function blockers(): BelongsToMany { return $this->belongsToMany(self::class, 'task_dependencies', 'task_id', 'blocked_by_task_id')->withTimestamps(); }
+    public function blockedTasks(): BelongsToMany { return $this->belongsToMany(self::class, 'task_dependencies', 'blocked_by_task_id', 'task_id')->withTimestamps(); }
 
     public function getIsOverdueAttribute(): bool
     {
         return $this->due_at && $this->due_at->isPast() && !in_array($this->status, ['completed','cancelled'], true);
+    }
+
+    public function getIsBlockedAttribute(): bool
+    {
+        if ($this->relationLoaded('blockers')) {
+            return $this->blockers->contains(fn (Task $task) => !in_array($task->status,['completed','cancelled'],true));
+        }
+        return $this->blockers()->whereNotIn('status',['completed','cancelled'])->exists();
     }
 }
