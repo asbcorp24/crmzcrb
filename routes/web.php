@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\AdvancedTaskController;
+use App\Http\Controllers\ArchiveController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\AvailabilityController;
 use App\Http\Controllers\CalendarController;
@@ -8,8 +10,12 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\DepartmentDashboardController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\EntityAttachmentController;
+use App\Http\Controllers\EntityCommentController;
 use App\Http\Controllers\HelpController;
+use App\Http\Controllers\Manager360Controller;
 use App\Http\Controllers\MeetingController;
+use App\Http\Controllers\MeetingToolsController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\ReportController;
@@ -30,11 +36,23 @@ Route::middleware('guest')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
-
     Route::get('/help/{section?}', [HelpController::class, 'page'])->name('help.page');
 
     Route::get('/search', [SearchController::class, 'page'])->name('search.page');
     Route::get('/ajax/search', [SearchController::class, 'ajax'])->name('search.ajax');
+
+    Route::get('/archive', [ArchiveController::class, 'page'])->name('archive.page');
+    Route::post('/ajax/archive/{type}/{id}', [ArchiveController::class, 'store'])->name('archive.store');
+    Route::post('/ajax/archive/{type}/{id}/restore', [ArchiveController::class, 'restore'])->name('archive.restore');
+
+    Route::get('/manager-360', [Manager360Controller::class, 'page'])->name('manager360.page');
+
+    Route::get('/ajax/entity/{type}/{id}/comments', [EntityCommentController::class, 'index'])->name('entity.comments.index');
+    Route::post('/ajax/entity/{type}/{id}/comments', [EntityCommentController::class, 'store'])->name('entity.comments.store');
+    Route::get('/ajax/entity/{type}/{id}/attachments', [EntityAttachmentController::class, 'index'])->name('entity.attachments.index');
+    Route::post('/ajax/entity/{type}/{id}/attachments', [EntityAttachmentController::class, 'store'])->name('entity.attachments.store');
+    Route::get('/entity-attachments/{attachment}/download', [EntityAttachmentController::class, 'download'])->name('entity.attachments.download');
+    Route::delete('/ajax/entity-attachments/{attachment}', [EntityAttachmentController::class, 'destroy'])->name('entity.attachments.destroy');
 
     Route::get('/ajax/notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::post('/ajax/notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
@@ -52,10 +70,19 @@ Route::middleware('auth')->group(function () {
     Route::get('/ajax/availability/check', [AvailabilityController::class, 'check'])->name('availability.check');
 
     Route::get('/tasks', [TaskController::class, 'page'])->name('tasks.page');
+    Route::get('/tasks/bulk', [AdvancedTaskController::class, 'bulkPage'])->name('tasks.bulk.page');
+    Route::post('/ajax/tasks/bulk', [AdvancedTaskController::class, 'bulkStore'])->name('tasks.bulk.store');
+    Route::post('/ajax/task-tags', [AdvancedTaskController::class, 'createTag'])->name('task-tags.store');
     Route::get('/ajax/tasks', [TaskController::class, 'index'])->name('tasks.index');
     Route::get('/ajax/tasks/{task}', [TaskController::class, 'show'])->name('tasks.show');
     Route::post('/ajax/tasks', [TaskController::class, 'store'])->name('tasks.store');
     Route::patch('/ajax/tasks/{task}', [TaskController::class, 'update'])->name('tasks.update');
+    Route::get('/ajax/tasks/{task}/advanced', [AdvancedTaskController::class, 'metadata'])->name('tasks.advanced');
+    Route::post('/ajax/tasks/{task}/subtasks', [AdvancedTaskController::class, 'addSubtask'])->name('tasks.subtasks.store');
+    Route::post('/ajax/tasks/{task}/dependencies', [AdvancedTaskController::class, 'addDependency'])->name('tasks.dependencies.store');
+    Route::delete('/ajax/tasks/{task}/dependencies/{blocker}', [AdvancedTaskController::class, 'removeDependency'])->name('tasks.dependencies.destroy');
+    Route::post('/ajax/tasks/{task}/tags', [AdvancedTaskController::class, 'syncTags'])->name('tasks.tags.sync');
+    Route::post('/ajax/tasks/{task}/archive', [AdvancedTaskController::class, 'archive'])->name('tasks.archive');
     Route::post('/ajax/tasks/{task}/comments', [TaskController::class, 'comment'])->name('tasks.comments.store');
     Route::post('/ajax/tasks/{task}/dashboard-complete', [TaskController::class, 'dashboardComplete'])->name('tasks.dashboard-complete');
     Route::post('/ajax/tasks/{task}/submit-review', [TaskController::class, 'submitReview'])->name('tasks.submit-review');
@@ -79,11 +106,15 @@ Route::middleware('auth')->group(function () {
     Route::post('/ajax/task-templates/{template}/create-task', [TaskTemplateController::class, 'createTask'])->name('task-templates.create-task');
 
     Route::get('/meetings', [MeetingController::class, 'page'])->name('meetings.page');
+    Route::get('/meetings/{meeting}/print', [MeetingToolsController::class, 'print'])->name('meetings.print');
     Route::get('/ajax/meetings', [MeetingController::class, 'index'])->name('meetings.index');
     Route::get('/ajax/meetings/{meeting}', [MeetingController::class, 'show'])->name('meetings.show');
     Route::post('/ajax/meetings', [MeetingController::class, 'store'])->name('meetings.store');
     Route::patch('/ajax/meetings/{meeting}', [MeetingController::class, 'update'])->name('meetings.update');
     Route::post('/ajax/meetings/{meeting}/items', [MeetingController::class, 'addItem'])->name('meetings.items.store');
+    Route::patch('/ajax/meetings/{meeting}/items/{item}', [MeetingToolsController::class, 'updateItem'])->name('meetings.items.update');
+    Route::delete('/ajax/meetings/{meeting}/items/{item}', [MeetingToolsController::class, 'destroyItem'])->name('meetings.items.destroy');
+    Route::post('/ajax/meetings/{meeting}/items/reorder', [MeetingToolsController::class, 'reorder'])->name('meetings.items.reorder');
     Route::post('/ajax/meetings/{meeting}/close', [MeetingController::class, 'close'])->name('meetings.close');
 
     Route::get('/reports', [ReportController::class, 'page'])->name('reports.page');
