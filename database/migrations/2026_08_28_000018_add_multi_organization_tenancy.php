@@ -26,65 +26,45 @@ return new class extends Migration {
         });
 
         $defaultOrgId = DB::table('organizations')->insertGetId([
-            'name' => env('APP_ORGANIZATION_NAME', 'Основная организация'),
-            'short_name' => env('APP_ORGANIZATION_SHORT_NAME', 'Организация'),
-            'code' => env('APP_ORGANIZATION_CODE', 'main'),
-            'slug' => Str::slug(env('APP_ORGANIZATION_NAME', 'Основная организация')) ?: 'main',
-            'primary_color' => '#0d6efd',
-            'secondary_color' => '#6c757d',
-            'timezone' => 'Europe/Moscow',
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'name'=>env('APP_ORGANIZATION_NAME','Основная организация'),'short_name'=>env('APP_ORGANIZATION_SHORT_NAME','Организация'),
+            'code'=>env('APP_ORGANIZATION_CODE','main'),'slug'=>Str::slug(env('APP_ORGANIZATION_NAME','Основная организация'))?:'main',
+            'primary_color'=>'#0d6efd','secondary_color'=>'#6c757d','timezone'=>'Europe/Moscow','is_active'=>true,
+            'created_at'=>now(),'updated_at'=>now(),
         ]);
 
         Schema::table('users', function (Blueprint $table) {
             $table->foreignId('organization_id')->nullable()->after('id')->constrained('organizations')->nullOnDelete();
             $table->boolean('is_superadmin')->default(false)->after('role')->index();
         });
-        DB::table('users')->update(['organization_id' => $defaultOrgId]);
+        DB::table('users')->update(['organization_id'=>$defaultOrgId]);
         Schema::table('users', function (Blueprint $table) {
             $table->dropUnique('users_email_unique');
-            $table->unique(['organization_id','email'], 'users_organization_email_unique');
-            $table->index(['organization_id','role','is_active'], 'users_org_role_active_idx');
+            $table->unique(['organization_id','email'],'users_organization_email_unique');
+            $table->index(['organization_id','role','is_active'],'users_org_role_active_idx');
         });
 
-        $tables = [
-            'departments','plans','tasks','task_comments','task_events','crm_notifications','task_attachments',
-            'positions','staffing_positions','employee_assignments','task_templates','task_template_checklist_items',
-            'task_checklist_items','task_deadline_changes','task_overdue_reasons','employee_absences','employee_substitutions',
-            'task_delegations','meetings','meeting_items','entity_comments','entity_attachments','push_subscriptions'
-        ];
+        $tables=['departments','plans','tasks','task_comments','task_events','crm_notifications','task_attachments','positions','staffing_positions','employee_assignments','task_templates','task_template_checklist_items','task_checklist_items','task_deadline_changes','task_overdue_reasons','employee_absences','employee_substitutions','task_delegations','meetings','meeting_items','entity_comments','entity_attachments','push_subscriptions','task_tags'];
+        foreach($tables as $name){
+            if(!Schema::hasTable($name)||Schema::hasColumn($name,'organization_id'))continue;
+            Schema::table($name,function(Blueprint $table){$table->foreignId('organization_id')->nullable()->after('id')->constrained('organizations')->nullOnDelete()->index();});
+            DB::table($name)->update(['organization_id'=>$defaultOrgId]);
+        }
 
-        foreach ($tables as $name) {
-            if (!Schema::hasTable($name) || Schema::hasColumn($name, 'organization_id')) continue;
-            Schema::table($name, function (Blueprint $table) {
-                $table->foreignId('organization_id')->nullable()->after('id')->constrained('organizations')->nullOnDelete()->index();
-            });
-            DB::table($name)->update(['organization_id' => $defaultOrgId]);
+        if(Schema::hasTable('positions')){
+            Schema::table('positions',function(Blueprint $table){$table->dropUnique('positions_code_unique');$table->unique(['organization_id','code'],'positions_org_code_unique');});
+        }
+        if(Schema::hasTable('task_tags')){
+            Schema::table('task_tags',function(Blueprint $table){$table->dropUnique('task_tags_name_unique');$table->dropUnique('task_tags_slug_unique');$table->unique(['organization_id','name'],'task_tags_org_name_unique');$table->unique(['organization_id','slug'],'task_tags_org_slug_unique');});
         }
     }
 
     public function down(): void
     {
-        $tables = [
-            'push_subscriptions','entity_attachments','entity_comments','meeting_items','meetings','task_delegations',
-            'employee_substitutions','employee_absences','task_overdue_reasons','task_deadline_changes','task_checklist_items',
-            'task_template_checklist_items','task_templates','employee_assignments','staffing_positions','positions',
-            'task_attachments','crm_notifications','task_events','task_comments','tasks','plans','departments'
-        ];
-        foreach ($tables as $name) {
-            if (Schema::hasTable($name) && Schema::hasColumn($name, 'organization_id')) {
-                Schema::table($name, fn (Blueprint $table) => $table->dropConstrainedForeignId('organization_id'));
-            }
-        }
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropUnique('users_organization_email_unique');
-            $table->dropIndex('users_org_role_active_idx');
-            $table->dropColumn('is_superadmin');
-            $table->dropConstrainedForeignId('organization_id');
-            $table->unique('email');
-        });
+        if(Schema::hasTable('task_tags'))Schema::table('task_tags',function(Blueprint $table){$table->dropUnique('task_tags_org_name_unique');$table->dropUnique('task_tags_org_slug_unique');$table->unique('name');$table->unique('slug');});
+        if(Schema::hasTable('positions'))Schema::table('positions',function(Blueprint $table){$table->dropUnique('positions_org_code_unique');$table->unique('code');});
+        $tables=['task_tags','push_subscriptions','entity_attachments','entity_comments','meeting_items','meetings','task_delegations','employee_substitutions','employee_absences','task_overdue_reasons','task_deadline_changes','task_checklist_items','task_template_checklist_items','task_templates','employee_assignments','staffing_positions','positions','task_attachments','crm_notifications','task_events','task_comments','tasks','plans','departments'];
+        foreach($tables as $name){if(Schema::hasTable($name)&&Schema::hasColumn($name,'organization_id'))Schema::table($name,fn(Blueprint $table)=>$table->dropConstrainedForeignId('organization_id'));}
+        Schema::table('users',function(Blueprint $table){$table->dropUnique('users_organization_email_unique');$table->dropIndex('users_org_role_active_idx');$table->dropColumn('is_superadmin');$table->dropConstrainedForeignId('organization_id');$table->unique('email');});
         Schema::dropIfExists('organizations');
     }
 };
