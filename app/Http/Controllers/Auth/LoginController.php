@@ -31,6 +31,12 @@ class LoginController extends Controller
         if($user && Hash::check($data['password'],$user->password)) {
             Auth::login($user,$request->boolean('remember'));
             $request->session()->regenerate();
+            $request->session()->put('tenant_organization_id', (int)($user->organization_id ?? 0));
+            $request->session()->put('tenant_is_superadmin', (bool)$user->is_superadmin);
+            config([
+                'tenant.organization_id' => (int)($user->organization_id ?? 0),
+                'tenant.is_superadmin' => (bool)$user->is_superadmin,
+            ]);
             return $user->isSuperAdmin()?redirect()->route('superadmin.organizations.index'):redirect()->intended(route('dashboard'));
         }
 
@@ -41,6 +47,7 @@ class LoginController extends Controller
     {
         $userId=$request->user()?->id; $endpointHash=$request->session()->get('push_endpoint_hash');
         if($userId&&$endpointHash) PushSubscription::where('user_id',$userId)->where('endpoint_hash',$endpointHash)->delete();
+        $request->session()->forget(['tenant_organization_id','tenant_is_superadmin','push_endpoint_hash']);
         Auth::logout(); $request->session()->invalidate(); $request->session()->regenerateToken();
         return redirect()->route('login');
     }
