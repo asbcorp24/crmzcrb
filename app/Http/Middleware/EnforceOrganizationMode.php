@@ -39,18 +39,18 @@ class EnforceOrganizationMode
         $response = $next($request);
         $contentType = (string)$response->headers->get('Content-Type');
         if (!str_contains($contentType, 'text/html') || !method_exists($response,'getContent')) return $response;
-
         $html = $response->getContent();
         if (!is_string($html) || $html==='') return $response;
 
         $displayName = e($organization->display_name);
         $primary = $this->safeColor($organization->primary_color, '#0d6efd');
         $secondary = $this->safeColor($organization->secondary_color, '#6c757d');
-        [$pr,$pg,$pb] = $this->hexRgb($primary);
-        [$sr,$sg,$sb] = $this->hexRgb($secondary);
+        [$pr,$pg,$pb] = $this->hexRgb($primary); [$sr,$sg,$sb] = $this->hexRgb($secondary);
         $icon = $organization->icon_path ?: '/pwa-icon.svg';
+        $manifest = '/tenant-manifest.webmanifest?organization='.rawurlencode($organization->code);
 
         $html = str_replace('CRM ЗЦРБ', $displayName, $html);
+        $html = str_replace('/manifest.webmanifest', e($manifest), $html);
         $html = str_replace('/pwa-icon.svg', e($icon), $html);
         $branding = '<style id="organization-branding">:root{--bs-primary:'.$primary.';--bs-primary-rgb:'.$pr.','.$pg.','.$pb.';--bs-secondary:'.$secondary.';--bs-secondary-rgb:'.$sr.','.$sg.','.$sb.'}.text-primary{color:'.$primary.'!important}.bg-primary{background-color:'.$primary.'!important}.btn-primary{--bs-btn-bg:'.$primary.';--bs-btn-border-color:'.$primary.';--bs-btn-hover-bg:'.$primary.';--bs-btn-hover-border-color:'.$primary.'}.progress-bar{background-color:'.$primary.'}.sidebar .nav-link.active,.sidebar .nav-link:hover{color:'.$primary.'!important}.app-mark{background:'.$primary.'!important}</style>';
         $html = str_replace('</head>', $branding.'</head>', $html);
@@ -58,14 +58,6 @@ class EnforceOrganizationMode
         return $response;
     }
 
-    private function safeColor(?string $value, string $fallback): string
-    {
-        return $value && preg_match('/^#[0-9A-Fa-f]{6}$/',$value) ? $value : $fallback;
-    }
-
-    private function hexRgb(string $hex): array
-    {
-        $hex=ltrim($hex,'#');
-        return [hexdec(substr($hex,0,2)),hexdec(substr($hex,2,2)),hexdec(substr($hex,4,2))];
-    }
+    private function safeColor(?string $value,string $fallback):string{return $value&&preg_match('/^#[0-9A-Fa-f]{6}$/',$value)?$value:$fallback;}
+    private function hexRgb(string $hex):array{$hex=ltrim($hex,'#');return [hexdec(substr($hex,0,2)),hexdec(substr($hex,2,2)),hexdec(substr($hex,4,2))];}
 }
