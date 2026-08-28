@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Validation\ValidationException;
 
 class Task extends Model
 {
@@ -18,6 +19,13 @@ class Task extends Model
 
     protected static function booted(): void
     {
+        static::creating(function (Task $task) {
+            if (!auth()->check() || auth()->user()->isSuperAdmin()) return;
+            if ($task->plan_id && !Plan::whereKey($task->plan_id)->exists()) throw ValidationException::withMessages(['plan_id'=>'План не принадлежит вашей организации.']);
+            if ($task->parent_task_id && !Task::whereKey($task->parent_task_id)->exists()) throw ValidationException::withMessages(['parent_task_id'=>'Родительская задача не принадлежит вашей организации.']);
+            if ($task->assigned_to && !User::whereKey($task->assigned_to)->exists()) throw ValidationException::withMessages(['assigned_to'=>'Исполнитель не принадлежит вашей организации.']);
+            if ($task->created_by && !User::whereKey($task->created_by)->exists()) throw ValidationException::withMessages(['created_by'=>'Автор не принадлежит вашей организации.']);
+        });
         static::created(function (Task $task) {
             Plan::recalculateById($task->plan_id);
             if (!$task->due_at || !$task->assigned_to || !$task->created_by) return;
