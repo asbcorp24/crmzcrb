@@ -49,7 +49,13 @@ return new class extends Migration {
             $table->index(['organization_id','role','is_active'], 'users_org_role_active_idx');
         });
 
-        $tables = ['departments','plans','tasks','positions','staffing_positions','meetings','task_templates'];
+        $tables = [
+            'departments','plans','tasks','task_comments','task_events','crm_notifications','task_attachments',
+            'positions','staffing_positions','employee_assignments','task_templates','task_template_checklist_items',
+            'task_checklist_items','task_deadline_changes','task_overdue_reasons','employee_absences','employee_substitutions',
+            'task_delegations','meetings','meeting_items','entity_comments','entity_attachments','push_subscriptions'
+        ];
+
         foreach ($tables as $name) {
             if (!Schema::hasTable($name) || Schema::hasColumn($name, 'organization_id')) continue;
             Schema::table($name, function (Blueprint $table) {
@@ -61,7 +67,13 @@ return new class extends Migration {
 
     public function down(): void
     {
-        foreach (['task_templates','meetings','staffing_positions','positions','tasks','plans','departments'] as $name) {
+        $tables = [
+            'push_subscriptions','entity_attachments','entity_comments','meeting_items','meetings','task_delegations',
+            'employee_substitutions','employee_absences','task_overdue_reasons','task_deadline_changes','task_checklist_items',
+            'task_template_checklist_items','task_templates','employee_assignments','staffing_positions','positions',
+            'task_attachments','crm_notifications','task_events','task_comments','tasks','plans','departments'
+        ];
+        foreach ($tables as $name) {
             if (Schema::hasTable($name) && Schema::hasColumn($name, 'organization_id')) {
                 Schema::table($name, fn (Blueprint $table) => $table->dropConstrainedForeignId('organization_id'));
             }
