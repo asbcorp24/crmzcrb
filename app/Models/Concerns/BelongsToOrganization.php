@@ -17,6 +17,10 @@ trait BelongsToOrganization
                 return;
             }
             $contextId=(int)config('tenant.organization_id',0);
+            if(!$contextId&&app()->runningInConsole()){
+                $args=implode(' ',$_SERVER['argv']??[]);
+                if(str_contains($args,'db:seed'))$contextId=(int)DB::table('organizations')->orderBy('id')->value('id');
+            }
             if($contextId)$builder->where($builder->getModel()->getTable().'.organization_id',$contextId);
         });
 
