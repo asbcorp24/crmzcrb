@@ -14,6 +14,13 @@ class EnforceOrganizationMode
         $user = auth()->user();
         $route = optional($request->route())->getName();
 
+        $request->session()->put('tenant_organization_id', (int)($user->organization_id ?? 0));
+        $request->session()->put('tenant_is_superadmin', (bool)$user->is_superadmin);
+        config([
+            'tenant.organization_id' => (int)($user->organization_id ?? 0),
+            'tenant.is_superadmin' => (bool)$user->is_superadmin,
+        ]);
+
         if ($user->isSuperAdmin()) {
             if (!in_array($route, ['logout'], true) && !str_starts_with((string)$route, 'superadmin.')) {
                 return redirect()->route('superadmin.organizations.index');
