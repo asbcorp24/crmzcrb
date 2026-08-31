@@ -9,13 +9,30 @@ use Illuminate\Support\Str;
 return new class extends Migration {
     private function indexExists(string $table, string $index): bool
     {
-        return !empty(DB::select("SHOW INDEX FROM `{$table}` WHERE Key_name = ?", [$index]));
+        $driver = DB::connection()->getDriverName();
+
+        if ($driver === 'sqlite') {
+            $safeTable = str_replace("'", "''", $table);
+            foreach (DB::select("PRAGMA index_list('{$safeTable}')") as $row) {
+                if (($row->name ?? null) === $index) return true;
+            }
+            return false;
+        }
+
+        if ($driver === 'mysql') {
+            return !empty(DB::select("SHOW INDEX FROM `{$table}` WHERE Key_name = ?", [$index]));
+        }
+
+        if ($driver === 'pgsql') {
+            return DB::table('pg_indexes')->where('tablename', $table)->where('indexname', $index)->exists();
+        }
+
+        return false;
     }
 
     public function up(): void
     {
-        // Миграция специально сделана возобновляемой: на MySQL/MariaDB ALTER TABLE
-        // может успеть применить предыдущие шаги до ошибки на следующей таблице.
+        // Миграция возобновляемая и совместима с MySQL/MariaDB и SQLite.
         if (!Schema::hasTable('organizations')) {
             Schema::create('organizations', function (Blueprint $table) {
                 $table->id();
@@ -52,8 +69,6 @@ return new class extends Migration {
 
         if (!Schema::hasColumn('users', 'organization_id')) {
             Schema::table('users', function (Blueprint $table) {
-                // Без автоматического FK: на некоторых shared-hosting MariaDB имена
-                // внешних ключей генерируются некорректно и конфликтуют между таблицами.
                 $table->unsignedBigInteger('organization_id')->nullable()->after('id');
             });
         }
@@ -107,8 +122,6 @@ return new class extends Migration {
 
     public function down(): void
     {
-        // Down оставлен консервативным. Для production multi-tenant миграцию
-        // откатывать не следует: сначала делается резервная копия БД.
         if (Schema::hasTable('task_tags')) {
             if ($this->indexExists('task_tags','task_tags_org_name_unique')) Schema::table('task_tags',fn(Blueprint $table)=>$table->dropUnique('task_tags_org_name_unique'));
             if ($this->indexExists('task_tags','task_tags_org_slug_unique')) Schema::table('task_tags',fn(Blueprint $table)=>$table->dropUnique('task_tags_org_slug_unique'));
