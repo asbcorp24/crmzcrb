@@ -14,6 +14,7 @@ class DownloadFrontendAssets extends Command
 
     private array $manifest = [];
     private array $visited = [];
+    private array $aliases = [];
 
     public function handle(): int
     {
@@ -32,6 +33,13 @@ class DownloadFrontendAssets extends Command
             } catch (\Throwable $e) {
                 $this->error($url.' -> '.$e->getMessage());
                 return self::FAILURE;
+            }
+        }
+
+        // Старые URL тоже должны переписываться middleware на тот же локальный файл.
+        foreach ($this->aliases as $old => $canonical) {
+            if (isset($this->manifest[$canonical])) {
+                $this->manifest[$old] = $this->manifest[$canonical];
             }
         }
 
@@ -63,17 +71,32 @@ class DownloadFrontendAssets extends Command
             foreach ($m[1] ?? [] as $url) {
                 $url = html_entity_decode($url);
                 if ($this->isIgnoredAsset($url)) continue;
-                if ($this->isAssetUrl($url)) $urls->push($url);
+                if (!$this->isAssetUrl($url)) continue;
+
+                $canonical = $this->canonicalizeAssetUrl($url);
+                if ($canonical !== $url) {
+                    $this->aliases[$url] = $canonical;
+                    $this->line('  ~ '.$url.' -> '.$canonical);
+                }
+                $urls->push($canonical);
             }
         }
         return $urls->unique()->values();
     }
 
+    private function canonicalizeAssetUrl(string $url): string
+    {
+        // FullCalendar 6: all locales are published by @fullcalendar/core,
+        // while older templates may still point to the aggregate fullcalendar package.
+        if (preg_match('#^https://cdn\.jsdelivr\.net/npm/fullcalendar@([^/]+)/locales-all\.global\.min\.js$#', $url, $m)) {
+            return 'https://cdn.jsdelivr.net/npm/@fullcalendar/core@'.$m[1].'/locales-all.global.min.js';
+        }
+        return $url;
+    }
+
     private function isIgnoredAsset(string $url): bool
     {
         // FullCalendar 6 global bundle does not publish index.global.min.css.
-        // Styles are included by the global JS bundle, so an old Blade reference
-        // to this non-existent file must not break offline asset generation.
         return str_contains($url, 'fullcalendar@6.1.15/index.global.min.css');
     }
 
@@ -117,7 +140,7 @@ class DownloadFrontendAssets extends Command
                 CURLOPT_MAXREDIRS => 8,
                 CURLOPT_CONNECTTIMEOUT => 15,
                 CURLOPT_TIMEOUT => 60,
-                CURLOPT_USERAGENT => 'CRM-ZCRB-Asset-Vendor/1.1',
+                CURLOPT_USERAGENT => 'CRM-ZCRB-Asset-Vendor/1.2',
                 CURLOPT_SSL_VERIFYPEER => true,
                 CURLOPT_SSL_VERIFYHOST => 2,
                 CURLOPT_ENCODING => '',
@@ -143,7 +166,7 @@ class DownloadFrontendAssets extends Command
                 'timeout' => 60,
                 'follow_location' => 1,
                 'max_redirects' => 8,
-                'header' => "User-Agent: CRM-ZCRB-Asset-Vendor/1.1\r\nAccept: */*\r\n",
+                'header' => "User-Agent: CRM-ZCRB-Asset-Vendor/1.2\r\nAccept: */*\r\n",
                 'ignore_errors' => true,
             ],
             'ssl' => ['verify_peer' => true, 'verify_peer_name' => true],
