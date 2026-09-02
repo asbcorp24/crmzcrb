@@ -2,7 +2,6 @@
 @section('title','Календарь — CRM ЗЦРБ')
 @section('header',auth()->user()->isManager()?'Сводный календарь':'Мой календарь')
 @push('styles')
-<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css" rel="stylesheet">
 <style>
 #calendar{background:#fff;padding:16px;border-radius:16px;box-shadow:0 1px 3px rgba(16,24,40,.08)}
 .fc .fc-toolbar-title{font-size:1.2rem}.fc-event{cursor:pointer}.calendar-summary td{vertical-align:middle}.calendar-filter-card{border-radius:16px}
