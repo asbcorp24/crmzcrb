@@ -34,7 +34,7 @@
 @endsection
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/locales-all.global.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.15/locales-all.global.min.js"></script>
 <script>
 const isManager={{ auth()->user()->isManager()?'true':'false' }};
 function escCal(v){return $('<div>').text(v??'').html()}
