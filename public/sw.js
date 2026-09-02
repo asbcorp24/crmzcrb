@@ -1,8 +1,26 @@
-const CACHE = 'crm-zcrb-pwa-v3';
+const CACHE = 'crm-zcrb-pwa-v4';
 const STATIC = ['/manifest.webmanifest','/pwa-icon.svg','/offline.html','/pwa-runtime.js'];
 
+async function vendorAssets() {
+  try {
+    const response = await fetch('/vendor/external/manifest.json', { cache: 'no-store' });
+    if (!response.ok) return [];
+    const manifest = await response.json();
+    return [...new Set(Object.values(manifest || {}))].filter(v => typeof v === 'string' && v.startsWith('/vendor/external/'));
+  } catch (_) {
+    return [];
+  }
+}
+
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(STATIC)));
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await cache.addAll(STATIC);
+    const assets = await vendorAssets();
+    if (assets.length) {
+      await Promise.allSettled(assets.map(url => cache.add(url)));
+    }
+  })());
   self.skipWaiting();
 });
 
@@ -20,8 +38,16 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  if (STATIC.includes(url.pathname)) {
-    event.respondWith(caches.match(request).then(hit => hit || fetch(request)));
+  if (STATIC.includes(url.pathname) || url.pathname.startsWith('/vendor/external/')) {
+    event.respondWith(
+      caches.match(request).then(hit => hit || fetch(request).then(response => {
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then(cache => cache.put(request, copy));
+        }
+        return response;
+      }))
+    );
     return;
   }
 
