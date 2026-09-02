@@ -4,8 +4,6 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 
@@ -86,9 +84,7 @@ class DownloadFrontendAssets extends Command
 
         if (!is_file($localPath) || $this->option('force')) {
             File::ensureDirectoryExists(dirname($localPath));
-            $response = Http::withHeaders(['User-Agent'=>'CRM-ZCRB-Asset-Vendor/1.0'])->timeout(45)->retry(2, 500)->get($url);
-            if (!$response->successful()) throw new \RuntimeException('HTTP '.$response->status());
-            File::put($localPath, $response->body());
+            File::put($localPath, $this->fetchRemote($url));
             $this->line('  + '.$url);
         } else {
             $this->line('  = '.$url);
@@ -99,6 +95,67 @@ class DownloadFrontendAssets extends Command
         }
 
         return $localUrl;
+    }
+
+    private function fetchRemote(string $url): string
+    {
+        // Не используем Laravel Http/Guzzle: команда должна работать даже в
+        // минимальной установке OpenServer, где guzzlehttp/guzzle отсутствует.
+        if (function_exists('curl_init')) {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 8,
+                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_TIMEOUT => 60,
+                CURLOPT_USERAGENT => 'CRM-ZCRB-Asset-Vendor/1.1',
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+                CURLOPT_ENCODING => '',
+            ]);
+            $body = curl_exec($ch);
+            $errno = curl_errno($ch);
+            $error = curl_error($ch);
+            $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+            curl_close($ch);
+
+            if ($body === false || $errno) {
+                throw new \RuntimeException('cURL: '.($error ?: 'ошибка '.$errno));
+            }
+            if ($status < 200 || $status >= 300) {
+                throw new \RuntimeException('HTTP '.$status);
+            }
+            return $body;
+        }
+
+        if (!filter_var(ini_get('allow_url_fopen'), FILTER_VALIDATE_BOOL)) {
+            throw new \RuntimeException('Нет cURL и выключен allow_url_fopen. Включите расширение curl в OpenServer/PHP.');
+        }
+
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'timeout' => 60,
+                'follow_location' => 1,
+                'max_redirects' => 8,
+                'header' => "User-Agent: CRM-ZCRB-Asset-Vendor/1.1\r\nAccept: */*\r\n",
+                'ignore_errors' => true,
+            ],
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true,
+            ],
+        ]);
+
+        $body = @file_get_contents($url, false, $context);
+        $status = 0;
+        foreach ($http_response_header ?? [] as $header) {
+            if (preg_match('#^HTTP/\S+\s+(\d{3})#i', $header, $m)) $status = (int)$m[1];
+        }
+        if ($body === false) throw new \RuntimeException('Не удалось скачать ресурс через PHP stream');
+        if ($status && ($status < 200 || $status >= 300)) throw new \RuntimeException('HTTP '.$status);
+        return $body;
     }
 
     private function vendorCssDependencies(string $cssUrl, string $localPath): void
