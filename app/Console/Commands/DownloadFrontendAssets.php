@@ -61,10 +61,20 @@ class DownloadFrontendAssets extends Command
             $text = File::get($path);
             preg_match_all('/(?:src|href)=["\'](https?:\/\/[^"\']+)["\']/i', $text, $m);
             foreach ($m[1] ?? [] as $url) {
-                if ($this->isAssetUrl($url)) $urls->push(html_entity_decode($url));
+                $url = html_entity_decode($url);
+                if ($this->isIgnoredAsset($url)) continue;
+                if ($this->isAssetUrl($url)) $urls->push($url);
             }
         }
         return $urls->unique()->values();
+    }
+
+    private function isIgnoredAsset(string $url): bool
+    {
+        // FullCalendar 6 global bundle does not publish index.global.min.css.
+        // Styles are included by the global JS bundle, so an old Blade reference
+        // to this non-existent file must not break offline asset generation.
+        return str_contains($url, 'fullcalendar@6.1.15/index.global.min.css');
     }
 
     private function isAssetUrl(string $url): bool
@@ -99,8 +109,6 @@ class DownloadFrontendAssets extends Command
 
     private function fetchRemote(string $url): string
     {
-        // Не используем Laravel Http/Guzzle: команда должна работать даже в
-        // минимальной установке OpenServer, где guzzlehttp/guzzle отсутствует.
         if (function_exists('curl_init')) {
             $ch = curl_init($url);
             curl_setopt_array($ch, [
@@ -120,12 +128,8 @@ class DownloadFrontendAssets extends Command
             $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
             curl_close($ch);
 
-            if ($body === false || $errno) {
-                throw new \RuntimeException('cURL: '.($error ?: 'ошибка '.$errno));
-            }
-            if ($status < 200 || $status >= 300) {
-                throw new \RuntimeException('HTTP '.$status);
-            }
+            if ($body === false || $errno) throw new \RuntimeException('cURL: '.($error ?: 'ошибка '.$errno));
+            if ($status < 200 || $status >= 300) throw new \RuntimeException('HTTP '.$status);
             return $body;
         }
 
@@ -142,10 +146,7 @@ class DownloadFrontendAssets extends Command
                 'header' => "User-Agent: CRM-ZCRB-Asset-Vendor/1.1\r\nAccept: */*\r\n",
                 'ignore_errors' => true,
             ],
-            'ssl' => [
-                'verify_peer' => true,
-                'verify_peer_name' => true,
-            ],
+            'ssl' => ['verify_peer' => true, 'verify_peer_name' => true],
         ]);
 
         $body = @file_get_contents($url, false, $context);
