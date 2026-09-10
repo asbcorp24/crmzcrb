@@ -19,6 +19,7 @@ use App\Http\Controllers\MeetingToolsController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\PushSubscriptionController;
+use App\Http\Controllers\QuestionnaireController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\StaffingController;
@@ -38,6 +39,11 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/help/{section?}', [HelpController::class, 'page'])->name('help.page');
+
+    Route::get('/questionnaires', [QuestionnaireController::class, 'page'])->name('questionnaires.page');
+    Route::post('/questionnaires', [QuestionnaireController::class, 'store'])->name('questionnaires.store');
+    Route::patch('/questionnaires/{questionnaire}', [QuestionnaireController::class, 'update'])->name('questionnaires.update');
+    Route::post('/questionnaires/{questionnaire}/submit', [QuestionnaireController::class, 'submit'])->name('questionnaires.submit');
 
     Route::get('/pwa/settings', [PushSubscriptionController::class, 'page'])->name('pwa.settings');
     Route::get('/ajax/push/status', [PushSubscriptionController::class, 'status'])->name('push.status');
