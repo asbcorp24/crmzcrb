@@ -29,6 +29,11 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
+        // Базовая анкета из примера пользователя должна быть доступна сразу
+        // после обычного php artisan db:seed. Seeder идемпотентный: при повторном
+        // запуске обновляет анкету и назначения подразделениям, не создавая дублей.
+        $this->call(QuestionnaireExampleSeeder::class);
+
         if (app()->environment(['local','development','testing']) || filter_var(env('SEED_DEMO_DATA', false), FILTER_VALIDATE_BOOL)) {
             $this->call(DemoSeeder::class);
         }
