@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AdvancedTaskController;
 use App\Http\Controllers\ArchiveController;
+use App\Http\Controllers\AttestationController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\AvailabilityController;
 use App\Http\Controllers\CalendarController;
@@ -44,6 +45,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/questionnaires', [QuestionnaireController::class, 'store'])->name('questionnaires.store');
     Route::patch('/questionnaires/{questionnaire}', [QuestionnaireController::class, 'update'])->name('questionnaires.update');
     Route::post('/questionnaires/{questionnaire}/submit', [QuestionnaireController::class, 'submit'])->name('questionnaires.submit');
+
+    Route::get('/attestation', [AttestationController::class, 'page'])->name('attestation.page');
+    Route::post('/attestation/campaigns', [AttestationController::class, 'storeCampaign'])->name('attestation.campaigns.store');
+    Route::post('/attestation/{campaign}/scores', [AttestationController::class, 'saveScores'])->name('attestation.scores.save');
 
     Route::get('/pwa/settings', [PushSubscriptionController::class, 'page'])->name('pwa.settings');
     Route::get('/ajax/push/status', [PushSubscriptionController::class, 'status'])->name('push.status');
