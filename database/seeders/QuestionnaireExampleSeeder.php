@@ -10,8 +10,8 @@ class QuestionnaireExampleSeeder extends Seeder
 {
     public function run(): void
     {
-        $organization = Organization::orderBy('id')->first();
-        if (!$organization) return;
+        $organizations = Organization::orderBy('id')->get();
+        if ($organizations->isEmpty()) return;
 
         $schema = [
             [
@@ -98,36 +98,42 @@ class QuestionnaireExampleSeeder extends Seeder
             ];
         }
 
-        $existing = DB::table('questionnaires')
-            ->where('organization_id', $organization->id)
-            ->where('title', 'Самооценка сотрудника')
-            ->first();
+        foreach ($organizations as $organization) {
+            $existing = DB::table('questionnaires')
+                ->where('organization_id', $organization->id)
+                ->where('title', 'Самооценка сотрудника')
+                ->first();
 
-        $data = [
-            'organization_id' => $organization->id,
-            'title' => 'Самооценка сотрудника',
-            'description' => 'Анкета самооценки знаний, вклада, соблюдения принципов организации и уровня развития мягких компетенций.',
-            'instructions' => 'Уровень 3 — навыки проявляются во всех рабочих ситуациях; 2 — в большинстве; 1 — иногда, в стрессовых ситуациях не проявляются; 0 — навыки отсутствуют.',
-            'status' => 'active',
-            'is_anonymous' => false,
-            'schema' => json_encode($schema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            'updated_at' => now(),
-        ];
+            $data = [
+                'organization_id' => $organization->id,
+                'title' => 'Самооценка сотрудника',
+                'description' => 'Анкета самооценки знаний, вклада, соблюдения принципов организации и уровня развития мягких компетенций.',
+                'instructions' => 'Уровень 3 — навыки проявляются во всех рабочих ситуациях; 2 — в большинстве; 1 — иногда, в стрессовых ситуациях не проявляются; 0 — навыки отсутствуют.',
+                'status' => 'active',
+                'is_anonymous' => false,
+                'schema' => json_encode($schema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'updated_at' => now(),
+            ];
 
-        if ($existing) {
-            DB::table('questionnaires')->where('id', $existing->id)->update($data);
-            $questionnaireId = $existing->id;
-        } else {
-            $data['created_at'] = now();
-            $questionnaireId = DB::table('questionnaires')->insertGetId($data);
-        }
+            if ($existing) {
+                DB::table('questionnaires')->where('id', $existing->id)->update($data);
+                $questionnaireId = $existing->id;
+            } else {
+                $data['created_at'] = now();
+                $questionnaireId = DB::table('questionnaires')->insertGetId($data);
+            }
 
-        $departmentIds = DB::table('departments')->where('organization_id', $organization->id)->where('is_active', true)->pluck('id');
-        foreach ($departmentIds as $departmentId) {
-            DB::table('questionnaire_departments')->updateOrInsert(
-                ['questionnaire_id' => $questionnaireId, 'department_id' => $departmentId],
-                ['organization_id' => $organization->id, 'updated_at' => now(), 'created_at' => now()]
-            );
+            $departmentIds = DB::table('departments')
+                ->where('organization_id', $organization->id)
+                ->where('is_active', true)
+                ->pluck('id');
+
+            foreach ($departmentIds as $departmentId) {
+                DB::table('questionnaire_departments')->updateOrInsert(
+                    ['questionnaire_id' => $questionnaireId, 'department_id' => $departmentId],
+                    ['organization_id' => $organization->id, 'updated_at' => now(), 'created_at' => now()]
+                );
+            }
         }
     }
 }
