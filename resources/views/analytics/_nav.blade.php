@@ -4,6 +4,9 @@
 <a class="btn btn-sm {{ request()->routeIs('analytics.plans')?'btn-primary':'btn-outline-secondary' }}" href="{{ route('analytics.plans') }}"><i class="bi bi-calendar3 me-1"></i>Планы</a>
 <a class="btn btn-sm {{ request()->routeIs('analytics.employees')?'btn-primary':'btn-outline-secondary' }}" href="{{ route('analytics.employees') }}"><i class="bi bi-people me-1"></i>Сотрудники</a>
 <a class="btn btn-sm {{ request()->routeIs('analytics.departments')?'btn-primary':'btn-outline-secondary' }}" href="{{ route('analytics.departments') }}"><i class="bi bi-diagram-3 me-1"></i>Подразделения</a>
+<a class="btn btn-sm {{ request()->routeIs('analytics.staffing')?'btn-primary':'btn-outline-secondary' }}" href="{{ route('analytics.staffing') }}"><i class="bi bi-person-workspace me-1"></i>Штат</a>
+<a class="btn btn-sm {{ request()->routeIs('analytics.meetings')?'btn-primary':'btn-outline-secondary' }}" href="{{ route('analytics.meetings') }}"><i class="bi bi-journal-check me-1"></i>Совещания</a>
+<a class="btn btn-sm {{ request()->routeIs('analytics.availability')?'btn-primary':'btn-outline-secondary' }}" href="{{ route('analytics.availability') }}"><i class="bi bi-calendar-x me-1"></i>Отсутствия</a>
 <a class="btn btn-sm {{ request()->routeIs('analytics.questionnaires')?'btn-primary':'btn-outline-secondary' }}" href="{{ route('analytics.questionnaires') }}"><i class="bi bi-ui-checks-grid me-1"></i>Анкеты</a>
 <a class="btn btn-sm {{ request()->routeIs('analytics.attestation')?'btn-primary':'btn-outline-secondary' }}" href="{{ route('analytics.attestation') }}"><i class="bi bi-person-check me-1"></i>Аттестация</a>
 </div></div></div>
