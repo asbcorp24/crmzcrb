@@ -1,5 +1,5 @@
-const CACHE = 'crm-zcrb-pwa-v4';
-const STATIC = ['/manifest.webmanifest','/pwa-icon.svg','/offline.html','/pwa-runtime.js'];
+const CACHE = 'crm-zcrb-pwa-v5';
+const STATIC = ['/manifest.webmanifest','/pwa-icon.svg','/offline.html','/pwa-runtime.js','/js/crm-charts.js'];
 
 async function vendorAssets() {
   try {
@@ -51,16 +51,11 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Рабочие страницы и API никогда не кэшируем.
-  // Для обычной навигации при отсутствии сети отдаём только безопасный offline-shell.
   if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request).catch(() => caches.match('/offline.html'))
-    );
+    event.respondWith(fetch(request).catch(() => caches.match('/offline.html')));
     return;
   }
 
-  // AJAX, файлы и прочие запросы должны честно завершиться ошибкой при отсутствии сети.
   event.respondWith(fetch(request));
 });
 
@@ -71,16 +66,10 @@ self.addEventListener('push', event => {
 
   const title = data.title || 'CRM ЗЦРБ';
   const options = {
-    body: data.body || '',
-    icon: '/pwa-icon.svg',
-    badge: '/pwa-icon.svg',
+    body: data.body || '', icon: '/pwa-icon.svg', badge: '/pwa-icon.svg',
     tag: data.notification_id ? `crm-${data.notification_id}` : undefined,
     renotify: false,
-    data: {
-      url: data.url || '/',
-      notification_id: data.notification_id || null,
-      type: data.type || null,
-    },
+    data: {url: data.url || '/', notification_id: data.notification_id || null, type: data.type || null},
     actions: [{ action: 'open', title: 'Открыть CRM' }],
   };
 
