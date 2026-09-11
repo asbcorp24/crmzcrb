@@ -10,6 +10,7 @@ use App\Models\TaskEvent;
 use App\Models\User;
 use App\Services\AccessService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 
@@ -42,23 +43,43 @@ class EmployeeController extends Controller
         $access=app(AccessService::class); $ids=$access->userIds($request->user(),true); $q=User::with(['department','manager'])->whereIn('id',$ids)->whereNull('archived_at');
         if($request->filled('department_id'))$q->where('department_id',$request->integer('department_id')); if($request->filled('role'))$q->where('role',$request->role);
         if($request->filled('q')){$s=trim($request->q);$q->where(function($w)use($s){$w->where('last_name','like',"%{$s}%")->orWhere('first_name','like',"%{$s}%")->orWhere('middle_name','like',"%{$s}%")->orWhere('position','like',"%{$s}%")->orWhere('email','like',"%{$s}%");});}
-        return response()->json($q->orderBy('last_name')->orderBy('first_name')->paginate(30));
+        $page=$q->orderBy('last_name')->orderBy('first_name')->paginate(30);
+        if($request->user()->isAdmin()){
+            $page->getCollection()->transform(function(User $u){$u->admin_visible_password=$this->decryptAdminPassword($u->admin_password);return $u;});
+        }
+        return response()->json($page);
     }
 
     public function store(Request $request)
     {
         abort_unless($request->user()->isManager(),403); $data=$this->validated($request);
         if(!$request->user()->isAdmin()){abort_unless((int)($data['manager_id']??0)===(int)$request->user()->id,403,'Руководитель может создавать только непосредственных подчинённых');abort_if(($data['role']??'employee')==='admin',403);}
-        $data['organization_id']=$request->user()->organization_id; $data['password']=Hash::make($request->input('password','ChangeMe123!')); $user=User::create($data);
-        return response()->json(['ok'=>true,'user'=>$user->load(['department','manager'])],201);
+        $plainPassword=$request->input('password','ChangeMe123!');
+        $data['organization_id']=$request->user()->organization_id;
+        $data['password']=Hash::make($plainPassword);
+        $data['admin_password']=Crypt::encryptString($plainPassword);
+        $user=User::create($data);
+        $user=$user->load(['department','manager']);
+        if($request->user()->isAdmin())$user->admin_visible_password=$plainPassword;
+        return response()->json(['ok'=>true,'user'=>$user],201);
     }
 
     public function update(Request $request, User $employee)
     {
         $access=app(AccessService::class); abort_unless($request->user()->isManager()&&($request->user()->isAdmin()||$access->canManageUser($request->user(),$employee)),403); $data=$this->validated($request,$employee->id);
         if(!$request->user()->isAdmin()){abort_if(($data['role']??$employee->role)==='admin',403);if(array_key_exists('manager_id',$data)&&$data['manager_id']){abort_unless($access->userIds($request->user(),true)->contains((int)$data['manager_id']),403,'Нельзя назначить руководителя вне доступной иерархии');}}
-        unset($data['organization_id'],$data['is_superadmin']); if($request->filled('password'))$data['password']=Hash::make($request->password); $employee->update($data);
-        return response()->json(['ok'=>true,'user'=>$employee->fresh()->load(['department','manager'])]);
+        unset($data['organization_id'],$data['is_superadmin']);
+        if($request->filled('password')){$data['password']=Hash::make($request->password);$data['admin_password']=Crypt::encryptString($request->password);}
+        $employee->update($data);
+        $fresh=$employee->fresh()->load(['department','manager']);
+        if($request->user()->isAdmin())$fresh->admin_visible_password=$this->decryptAdminPassword($fresh->admin_password);
+        return response()->json(['ok'=>true,'user'=>$fresh]);
+    }
+
+    private function decryptAdminPassword(?string $value): ?string
+    {
+        if(!$value)return null;
+        try{return Crypt::decryptString($value);}catch(\Throwable $e){return null;}
     }
 
     private function validated(Request $request, ?int $id=null): array
