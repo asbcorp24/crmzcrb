@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Plan;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\AccessService;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
@@ -22,13 +23,9 @@ class DashboardController extends Controller
                   });
             })
             ->orderByRaw("CASE WHEN status='completed' THEN 2 WHEN due_at IS NULL THEN 1 ELSE 0 END")
-            ->orderBy('due_at')
-            ->latest('id')
-            ->limit(40)
-            ->get();
+            ->orderBy('due_at')->latest('id')->limit(40)->get();
 
-        $upcomingTasks = Task::with('creator')
-            ->where('assigned_to', $user->id)
+        $upcomingTasks = Task::with('creator')->where('assigned_to', $user->id)
             ->whereNotIn('status', ['completed','cancelled'])
             ->whereBetween('due_at', [now(), now()->copy()->addDays(7)->endOfDay()])
             ->orderBy('due_at')->get();
@@ -46,22 +43,33 @@ class DashboardController extends Controller
         $monthScope = $open + $doneMonth;
 
         $stats = [
-            'my_open' => $open,
-            'my_overdue' => $overdue,
-            'my_review' => $review,
-            'my_done_month' => $doneMonth,
-            'today' => $today,
-            'done_percent' => $monthScope > 0 ? (int) round(($doneMonth / $monthScope) * 100) : 100,
-            'due_7_days' => $upcomingTasks->count(),
-            'plans_7_days' => $upcomingPlans->count(),
+            'my_open' => $open,'my_overdue' => $overdue,'my_review' => $review,'my_done_month' => $doneMonth,
+            'today' => $today,'done_percent' => $monthScope > 0 ? (int) round(($doneMonth / $monthScope) * 100) : 100,
+            'due_7_days' => $upcomingTasks->count(),'plans_7_days' => $upcomingPlans->count(),
         ];
 
+        $analyticsUserIds = collect([$user->id]);
         if ($user->isManager()) {
-            $teamIds = $user->isAdmin() ? User::pluck('id') : $user->subordinates()->pluck('id');
-            $stats['team_open'] = Task::whereIn('assigned_to',$teamIds)->whereNotIn('status',['completed','cancelled'])->count();
-            $stats['team_overdue'] = Task::whereIn('assigned_to',$teamIds)->whereNotIn('status',['completed','cancelled'])->where('due_at','<',now())->count();
+            $analyticsUserIds = app(AccessService::class)->userIds($user,true);
+            $stats['team_open'] = Task::whereIn('assigned_to',$analyticsUserIds)->whereNotIn('status',['completed','cancelled'])->count();
+            $stats['team_overdue'] = Task::whereIn('assigned_to',$analyticsUserIds)->whereNotIn('status',['completed','cancelled'])->where('due_at','<',now())->count();
         }
 
-        return view('dashboard', compact('myTasks','upcomingTasks','upcomingPlans','stats'));
+        $analyticsTasks = Task::whereIn('assigned_to',$analyticsUserIds)->whereNull('archived_at')->get();
+        $statusMap = [
+            'Открыто'=>$analyticsTasks->whereNotIn('status',['completed','cancelled'])->count(),
+            'Выполнено'=>$analyticsTasks->where('status','completed')->count(),
+            'На проверке'=>$analyticsTasks->where('status','review')->count(),
+            'Просрочено'=>$analyticsTasks->whereNotIn('status',['completed','cancelled'])->filter(fn($t)=>$t->due_at&&$t->due_at->isPast())->count(),
+        ];
+        $months=[];$created=[];$completed=[];
+        for($i=5;$i>=0;$i--){
+            $m=now()->copy()->startOfMonth()->subMonths($i);$key=$m->format('Y-m');$months[]=$m->translatedFormat('M Y');
+            $created[]=$analyticsTasks->filter(fn($t)=>$t->created_at&&$t->created_at->format('Y-m')===$key)->count();
+            $completed[]=$analyticsTasks->filter(fn($t)=>$t->completed_at&&$t->completed_at->format('Y-m')===$key)->count();
+        }
+        $dashboardAnalytics=['statuses'=>$statusMap,'months'=>$months,'created'=>$created,'completed'=>$completed];
+
+        return view('dashboard', compact('myTasks','upcomingTasks','upcomingPlans','stats','dashboardAnalytics'));
     }
 }
