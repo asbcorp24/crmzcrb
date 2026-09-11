@@ -8,4 +8,5 @@ Route::middleware('auth')->prefix('superadmin')->name('superadmin.')->group(func
     Route::post('/organizations', [OrganizationController::class, 'store'])->name('organizations.store');
     Route::patch('/organizations/{organization}', [OrganizationController::class, 'update'])->name('organizations.update');
     Route::post('/organizations/{organization}/toggle', [OrganizationController::class, 'toggle'])->name('organizations.toggle');
+    Route::post('/organizations/{organization}/admins', [OrganizationController::class, 'storeAdmin'])->name('organizations.admins.store');
 });
