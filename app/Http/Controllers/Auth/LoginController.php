@@ -66,8 +66,8 @@ class LoginController extends Controller
         $user = null;
 
         if ($code === '') {
-            $envLogin = (string) env('SUPERADMIN_LOGIN', '');
-            $envPassword = (string) env('SUPERADMIN_PASSWORD', '');
+            $envLogin = (string) config('superadmin.login', '');
+            $envPassword = (string) config('superadmin.password', '');
             $enteredLogin = trim((string) ($data['login'] ?? $data['email'] ?? ''));
 
             if ($envLogin === '' || $envPassword === '') {
