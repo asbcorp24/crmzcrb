@@ -29,13 +29,26 @@ class AttestationController extends Controller
         $myCommissionScores = collect();
         $commissionAnalytics = null;
         $isCommissionMember = false;
+        $assignedDepartments = collect();
+        $workDepartmentId = null;
+        $commissionDepartmentId = null;
 
         if ($selected) {
             $assignedDepartmentIds = DB::table('attestation_campaign_departments')
                 ->where('campaign_id', $selected->id)->pluck('department_id')->map(fn ($v) => (int) $v);
+            $assignedDepartments = $departments->whereIn('id', $assignedDepartmentIds)->values();
 
             if ($viewer->department_id && $assignedDepartmentIds->contains((int) $viewer->department_id)) {
-                $colleagues = $allUsers->where('id', '<>', $viewer->id)->values();
+                $requestedWorkDepartment = (int) $request->query('work_department');
+                $workDepartmentId = $departments->contains('id', $requestedWorkDepartment)
+                    ? $requestedWorkDepartment
+                    : (int) ($viewer->department_id ?: $departments->first()?->id);
+
+                $colleagues = $allUsers
+                    ->where('department_id', $workDepartmentId)
+                    ->where('id', '<>', $viewer->id)
+                    ->values();
+
                 $myScores = DB::table('attestation_scores')
                     ->where('campaign_id', $selected->id)->where('evaluator_id', $viewer->id)
                     ->pluck('score', 'evaluatee_id');
@@ -47,7 +60,15 @@ class AttestationController extends Controller
             $isCommissionMember = $commissionMemberIds->contains((int) $viewer->id);
 
             if ($isCommissionMember) {
-                $commissionTargets = $allUsers->whereIn('department_id', $assignedDepartmentIds)->values();
+                $requestedCommissionDepartment = (int) $request->query('commission_department');
+                $commissionDepartmentId = $assignedDepartmentIds->contains($requestedCommissionDepartment)
+                    ? $requestedCommissionDepartment
+                    : (int) ($assignedDepartmentIds->first() ?: 0);
+
+                if ($commissionDepartmentId) {
+                    $commissionTargets = $allUsers->where('department_id', $commissionDepartmentId)->values();
+                }
+
                 $myCommissionScores = DB::table('attestation_commission_scores')
                     ->where('campaign_id', $selected->id)
                     ->where('commission_member_id', $viewer->id)
@@ -120,8 +141,9 @@ class AttestationController extends Controller
         }
 
         return view('attestation.index', compact(
-            'campaigns','selected','departments','allUsers','myDepartment','colleagues','myScores','analytics',
-            'commissionMembers','commissionTargets','myCommissionScores','commissionAnalytics','isCommissionMember'
+            'campaigns','selected','departments','assignedDepartments','allUsers','myDepartment','colleagues','myScores','analytics',
+            'commissionMembers','commissionTargets','myCommissionScores','commissionAnalytics','isCommissionMember',
+            'workDepartmentId','commissionDepartmentId'
         ));
     }
 
