@@ -13,8 +13,8 @@ class CreateSuperAdmin extends Command
 
     public function handle(): int
     {
-        $login = trim((string) env('SUPERADMIN_LOGIN', ''));
-        $password = (string) env('SUPERADMIN_PASSWORD', '');
+        $login = trim((string) config('superadmin.login', ''));
+        $password = (string) config('superadmin.password', '');
 
         if ($login === '' || $password === '') {
             $this->error('В .env должны быть заданы SUPERADMIN_LOGIN и SUPERADMIN_PASSWORD.');
