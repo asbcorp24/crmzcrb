@@ -10,7 +10,8 @@ class HelpController extends Controller
     {
         $sections = [
             'start','dashboard','tasks','plans','calendar','employees','departments','meetings',
-            'availability','templates','staffing','control','reports','search','notifications','roles','faq'
+            'availability','templates','staffing','control','reports','questionnaires','attestation',
+            'analytics','settings','search','notifications','roles','faq'
         ];
 
         if ($section !== null && !in_array($section, $sections, true)) {
