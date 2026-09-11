@@ -7,6 +7,7 @@ use App\Models\Department;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -14,14 +15,28 @@ use Illuminate\Validation\Rule;
 
 class OrganizationController extends Controller
 {
-    public function index()
+    private function ensureSuperAdmin(Request $request): void
     {
+        abort_unless($request->user()?->isSuperAdmin(), 403);
+    }
+
+    public function index(Request $request)
+    {
+        $this->ensureSuperAdmin($request);
         $organizations = Organization::withCount(['users','departments'])->orderBy('name')->get();
-        return view('superadmin.organizations.index', compact('organizations'));
+        $admins = User::withoutGlobalScopes()
+            ->where('is_superadmin', false)
+            ->where('role', 'admin')
+            ->whereNull('archived_at')
+            ->orderBy('last_name')->orderBy('first_name')
+            ->get()
+            ->groupBy('organization_id');
+        return view('superadmin.organizations.index', compact('organizations','admins'));
     }
 
     public function store(Request $request)
     {
+        $this->ensureSuperAdmin($request);
         $data=$request->validate([
             'name'=>'required|string|max:190','short_name'=>'nullable|string|max:100',
             'code'=>'required|string|max:50|alpha_dash|unique:organizations,code',
@@ -44,6 +59,7 @@ class OrganizationController extends Controller
                 'last_name'=>$data['admin_last_name'],'first_name'=>$data['admin_first_name'],'middle_name'=>$data['admin_middle_name']??null,
                 'position'=>'Администратор организации','email'=>Str::lower($data['admin_email']),'role'=>'admin','is_superadmin'=>false,
                 'is_active'=>true,'password'=>Hash::make($data['admin_password']),
+                'admin_password'=>Crypt::encryptString($data['admin_password']),
             ]);
             return $org;
         });
@@ -51,8 +67,56 @@ class OrganizationController extends Controller
         return redirect()->route('superadmin.organizations.index')->with('success','Организация «'.$org->name.'» создана.');
     }
 
+    public function storeAdmin(Request $request, Organization $organization)
+    {
+        $this->ensureSuperAdmin($request);
+
+        $data = $request->validate([
+            'last_name' => 'required|string|max:100',
+            'first_name' => 'required|string|max:100',
+            'middle_name' => 'nullable|string|max:100',
+            'email' => [
+                'required','email','max:190',
+                Rule::unique('users','email')->where(fn($q)=>$q->where('organization_id',$organization->id)),
+            ],
+            'password' => 'required|string|min:8|max:100',
+        ]);
+
+        $department = Department::withoutGlobalScopes()
+            ->where('organization_id', $organization->id)
+            ->where('type', 'administration')
+            ->first();
+
+        if (!$department) {
+            $department = Department::withoutGlobalScopes()->create([
+                'organization_id'=>$organization->id,
+                'name'=>'Администрация','short_name'=>'Администрация',
+                'type'=>'administration','is_active'=>true,'sort_order'=>0,
+            ]);
+        }
+
+        User::withoutGlobalScopes()->create([
+            'organization_id'=>$organization->id,
+            'department_id'=>$department->id,
+            'manager_id'=>null,
+            'last_name'=>$data['last_name'],
+            'first_name'=>$data['first_name'],
+            'middle_name'=>$data['middle_name']??null,
+            'position'=>'Администратор организации',
+            'email'=>Str::lower($data['email']),
+            'role'=>'admin',
+            'is_superadmin'=>false,
+            'is_active'=>true,
+            'password'=>Hash::make($data['password']),
+            'admin_password'=>Crypt::encryptString($data['password']),
+        ]);
+
+        return back()->with('success','Администратор организации создан.');
+    }
+
     public function update(Request $request, Organization $organization)
     {
+        $this->ensureSuperAdmin($request);
         $data=$request->validate([
             'name'=>'required|string|max:190','short_name'=>'nullable|string|max:100',
             'code'=>['required','string','max:50','alpha_dash',Rule::unique('organizations','code')->ignore($organization->id)],
@@ -64,8 +128,9 @@ class OrganizationController extends Controller
         return back()->with('success','Настройки организации сохранены.');
     }
 
-    public function toggle(Organization $organization)
+    public function toggle(Request $request, Organization $organization)
     {
+        $this->ensureSuperAdmin($request);
         $organization->update(['is_active'=>!$organization->is_active]);
         return back()->with('success',$organization->is_active?'Организация включена.':'Организация отключена.');
     }
