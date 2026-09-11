@@ -2,6 +2,60 @@
   const csrf = () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
   const encoding = () => (window.PushManager?.supportedContentEncodings || ['aes128gcm'])[0];
 
+  function ensureThemeStylesheet() {
+    if (document.querySelector('link[href="/user-themes.css"]')) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '/user-themes.css';
+    document.head.appendChild(link);
+  }
+
+  function applyTheme(theme) {
+    const allowed = ['light','dark','blue','green','purple','contrast'];
+    const value = allowed.includes(theme) ? theme : 'light';
+    ensureThemeStylesheet();
+    document.documentElement.setAttribute('data-crm-theme', value);
+    try { localStorage.setItem('crm-ui-theme', value); } catch (_) {}
+  }
+
+  function applyCachedTheme() {
+    try { applyTheme(localStorage.getItem('crm-ui-theme') || 'light'); }
+    catch (_) { applyTheme('light'); }
+  }
+
+  async function syncThemeFromServer() {
+    try {
+      const r = await fetch('/ajax/user-theme', {credentials:'same-origin', headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}});
+      if (!r.ok) return;
+      const data = await r.json();
+      applyTheme(data.theme || 'light');
+    } catch (_) {}
+  }
+
+  function addUserSettingsMenu() {
+    if (document.querySelector('a[href="/my-settings"]')) return;
+
+    const systemSection = [...document.querySelectorAll('.sidebar-section')].find(x => x.textContent.trim() === 'Система');
+    if (systemSection) {
+      const a = document.createElement('a');
+      a.className = 'nav-link rounded' + (location.pathname === '/my-settings' ? ' active' : '');
+      a.href = '/my-settings';
+      a.innerHTML = '<i class="bi bi-palette me-2"></i>Мои настройки';
+      systemSection.parentNode.insertBefore(a, systemSection.nextSibling);
+    }
+
+    const mobileSystem = [...document.querySelectorAll('.mobile-section-title')].find(x => x.textContent.trim() === 'Система');
+    if (mobileSystem) {
+      const a = document.createElement('a');
+      a.className = 'mobile-menu-link' + (location.pathname === '/my-settings' ? ' active' : '');
+      a.href = '/my-settings';
+      a.innerHTML = '<i class="bi bi-palette"></i><span>Мои настройки</span>';
+      mobileSystem.parentNode.insertBefore(a, mobileSystem.nextSibling);
+    }
+  }
+
+  applyCachedTheme();
+
   async function currentSubscription() {
     if (!window.isSecureContext || !('serviceWorker' in navigator) || !('PushManager' in window)) return null;
     const reg = await navigator.serviceWorker.ready;
@@ -82,5 +136,11 @@
     }catch(_){ }
   }
 
-  window.addEventListener('load', () => { syncSubscription(); addAnalyticsMenu(); addDashboardAnalytics(); });
+  window.addEventListener('load', () => {
+    syncThemeFromServer();
+    syncSubscription();
+    addUserSettingsMenu();
+    addAnalyticsMenu();
+    addDashboardAnalytics();
+  });
 })();
