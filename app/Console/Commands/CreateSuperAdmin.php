@@ -8,25 +8,50 @@ use Illuminate\Support\Facades\Hash;
 
 class CreateSuperAdmin extends Command
 {
-    protected $signature = 'crm:superadmin {email?}';
-    protected $description = 'Create or update the global CRM superadmin';
+    protected $signature = 'crm:superadmin';
+    protected $description = 'Create or update the global CRM superadmin using .env credentials';
 
     public function handle(): int
     {
-        $email = strtolower(trim($this->argument('email') ?: $this->ask('Email суперадмина')));
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { $this->error('Некорректный email.'); return self::FAILURE; }
-        $password = $this->secret('Пароль суперадмина (минимум 12 символов)');
-        if (strlen((string)$password) < 12) { $this->error('Пароль должен содержать минимум 12 символов.'); return self::FAILURE; }
+        $login = trim((string) env('SUPERADMIN_LOGIN', ''));
+        $password = (string) env('SUPERADMIN_PASSWORD', '');
 
-        $user = User::withoutGlobalScopes()->whereNull('organization_id')->where('email',$email)->first() ?: new User();
+        if ($login === '' || $password === '') {
+            $this->error('В .env должны быть заданы SUPERADMIN_LOGIN и SUPERADMIN_PASSWORD.');
+            return self::FAILURE;
+        }
+        if (strlen($password) < 12) {
+            $this->error('SUPERADMIN_PASSWORD должен содержать минимум 12 символов.');
+            return self::FAILURE;
+        }
+
+        $user = User::withoutGlobalScopes()
+            ->whereNull('organization_id')
+            ->where('is_superadmin', true)
+            ->first() ?: new User();
+
+        $dbEmail = filter_var($login, FILTER_VALIDATE_EMAIL)
+            ? strtolower($login)
+            : 'superadmin@local.invalid';
+
         $user->fill([
-            'organization_id'=>null,'department_id'=>null,'manager_id'=>null,
-            'last_name'=>'Суперадмин','first_name'=>'CRM','middle_name'=>null,
-            'position'=>'Суперадминистратор','email'=>$email,'role'=>'admin','is_superadmin'=>true,
-            'is_active'=>true,'password'=>Hash::make($password),
+            'organization_id' => null,
+            'department_id' => null,
+            'manager_id' => null,
+            'last_name' => 'Суперадмин',
+            'first_name' => 'CRM',
+            'middle_name' => null,
+            'position' => 'Суперадминистратор',
+            'email' => $dbEmail,
+            'role' => 'admin',
+            'is_superadmin' => true,
+            'is_active' => true,
+            'password' => Hash::make($password),
         ]);
         $user->save();
-        $this->info('Суперадмин создан/обновлён: '.$email);
+
+        $this->info('Суперадмин создан/обновлён из .env.');
+        $this->line('Логин: '.$login);
         $this->line('На странице входа оставьте код организации пустым.');
         return self::SUCCESS;
     }
