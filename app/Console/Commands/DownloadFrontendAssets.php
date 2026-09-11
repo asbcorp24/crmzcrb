@@ -36,7 +36,6 @@ class DownloadFrontendAssets extends Command
             }
         }
 
-        // Старые URL тоже должны переписываться middleware на тот же локальный файл.
         foreach ($this->aliases as $old => $canonical) {
             if (isset($this->manifest[$canonical])) {
                 $this->manifest[$old] = $this->manifest[$canonical];
@@ -86,8 +85,6 @@ class DownloadFrontendAssets extends Command
 
     private function canonicalizeAssetUrl(string $url): string
     {
-        // FullCalendar 6: all locales are published by @fullcalendar/core,
-        // while older templates may still point to the aggregate fullcalendar package.
         if (preg_match('#^https://cdn\.jsdelivr\.net/npm/fullcalendar@([^/]+)/locales-all\.global\.min\.js$#', $url, $m)) {
             return 'https://cdn.jsdelivr.net/npm/@fullcalendar/core@'.$m[1].'/locales-all.global.min.js';
         }
@@ -96,7 +93,6 @@ class DownloadFrontendAssets extends Command
 
     private function isIgnoredAsset(string $url): bool
     {
-        // FullCalendar 6 global bundle does not publish index.global.min.css.
         return str_contains($url, 'fullcalendar@6.1.15/index.global.min.css');
     }
 
@@ -140,7 +136,7 @@ class DownloadFrontendAssets extends Command
                 CURLOPT_MAXREDIRS => 8,
                 CURLOPT_CONNECTTIMEOUT => 15,
                 CURLOPT_TIMEOUT => 60,
-                CURLOPT_USERAGENT => 'CRM-ZCRB-Asset-Vendor/1.2',
+                CURLOPT_USERAGENT => 'CRM-ZCRB-Asset-Vendor/1.3',
                 CURLOPT_SSL_VERIFYPEER => true,
                 CURLOPT_SSL_VERIFYHOST => 2,
                 CURLOPT_ENCODING => '',
@@ -166,7 +162,7 @@ class DownloadFrontendAssets extends Command
                 'timeout' => 60,
                 'follow_location' => 1,
                 'max_redirects' => 8,
-                'header' => "User-Agent: CRM-ZCRB-Asset-Vendor/1.2\r\nAccept: */*\r\n",
+                'header' => "User-Agent: CRM-ZCRB-Asset-Vendor/1.3\r\nAccept: */*\r\n",
                 'ignore_errors' => true,
             ],
             'ssl' => ['verify_peer' => true, 'verify_peer_name' => true],
@@ -185,13 +181,26 @@ class DownloadFrontendAssets extends Command
     private function vendorCssDependencies(string $cssUrl, string $localPath): void
     {
         $css = File::get($localPath);
-        preg_match_all('/url\(([^)]+)\)/i', $css, $m);
-        foreach ($m[1] ?? [] as $raw) {
+        $rewritten = $css;
+
+        preg_match_all('/url\(([^)]+)\)/i', $css, $m, PREG_SET_ORDER);
+        foreach ($m as $match) {
+            $rawExpression = $match[0];
+            $raw = $match[1] ?? '';
             $ref = trim($raw, " \t\n\r\0\x0B\"'");
+
             if ($ref === '' || str_starts_with($ref, 'data:') || str_starts_with($ref, '#')) continue;
+
             $absolute = $this->resolveUrl($cssUrl, $ref);
             if (!$absolute) continue;
-            $this->download($absolute, false);
+
+            $localDependencyUrl = $this->download($absolute, false);
+            $rewritten = str_replace($rawExpression, 'url("'.$localDependencyUrl.'")', $rewritten);
+        }
+
+        if ($rewritten !== $css) {
+            File::put($localPath, $rewritten);
+            $this->line('  ↳ CSS ссылки переписаны на локальные файлы');
         }
     }
 
