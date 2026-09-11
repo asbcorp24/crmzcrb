@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DashboardAnalyticsController;
+use App\Http\Controllers\OperationalAnalyticsController;
 use App\Http\Controllers\OrganizationAnalyticsController;
 use Illuminate\Support\Facades\Route;
 
@@ -13,5 +14,8 @@ Route::middleware('auth')->group(function () {
         Route::get('/plans', [OrganizationAnalyticsController::class, 'plans'])->name('plans');
         Route::get('/employees', [OrganizationAnalyticsController::class, 'employees'])->name('employees');
         Route::get('/departments', [OrganizationAnalyticsController::class, 'departments'])->name('departments');
+        Route::get('/meetings', [OperationalAnalyticsController::class, 'meetings'])->name('meetings');
+        Route::get('/availability', [OperationalAnalyticsController::class, 'availability'])->name('availability');
+        Route::get('/staffing', [OperationalAnalyticsController::class, 'staffing'])->name('staffing');
     });
 });
