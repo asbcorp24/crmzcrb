@@ -13,7 +13,7 @@ class User extends Authenticatable
 {
     use HasFactory, Notifiable, BelongsToOrganization;
 
-    protected $fillable = ['organization_id','department_id','manager_id','last_name','first_name','middle_name','position','email','phone','role','is_superadmin','is_active','employment_date','password','admin_password','archived_at','archived_by'];
+    protected $fillable = ['organization_id','department_id','manager_id','last_name','first_name','middle_name','position','email','phone','role','is_superadmin','is_active','employment_date','password','admin_password','ui_theme','archived_at','archived_by'];
     protected $hidden = ['password','admin_password','remember_token'];
     protected $casts = ['is_superadmin'=>'boolean','is_active'=>'boolean','employment_date'=>'date','email_verified_at'=>'datetime','archived_at'=>'datetime'];
 
