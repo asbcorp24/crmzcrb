@@ -19,21 +19,27 @@ class LocalFrontendAssets
         $type = (string)$response->headers->get('Content-Type');
         if (!str_contains($type, 'text/html')) return $response;
 
-        $manifestPath = public_path('vendor/external/manifest.json');
-        if (!is_file($manifestPath)) return $response;
-
-        $mtime = filemtime($manifestPath) ?: 0;
-        if (self::$manifest === null || self::$mtime !== $mtime) {
-            $decoded = json_decode(File::get($manifestPath), true);
-            self::$manifest = is_array($decoded) ? $decoded : [];
-            self::$mtime = $mtime;
-        }
-
-        if (!self::$manifest) return $response;
         $html = $response->getContent();
         if (!is_string($html) || $html === '') return $response;
 
-        $response->setContent(str_replace(array_keys(self::$manifest), array_values(self::$manifest), $html));
+        if ($request->is('tasks') && !str_contains($html, '/task-business.js')) {
+            $html = str_replace('</body>', '<script src="/task-business.js"></script></body>', $html);
+        }
+
+        $manifestPath = public_path('vendor/external/manifest.json');
+        if (is_file($manifestPath)) {
+            $mtime = filemtime($manifestPath) ?: 0;
+            if (self::$manifest === null || self::$mtime !== $mtime) {
+                $decoded = json_decode(File::get($manifestPath), true);
+                self::$manifest = is_array($decoded) ? $decoded : [];
+                self::$mtime = $mtime;
+            }
+            if (self::$manifest) {
+                $html = str_replace(array_keys(self::$manifest), array_values(self::$manifest), $html);
+            }
+        }
+
+        $response->setContent($html);
         return $response;
     }
 }
