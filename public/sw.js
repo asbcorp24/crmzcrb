@@ -1,5 +1,5 @@
-const CACHE = 'crm-zcrb-pwa-v9';
-const STATIC = ['/manifest.webmanifest','/pwa-icon.svg','/offline.html','/pwa-runtime.js','/js/crm-charts.js','/user-themes.css'];
+const CACHE = 'crm-zcrb-pwa-v10';
+const STATIC = ['/manifest.webmanifest','/pwa-icon.svg','/offline.html','/pwa-runtime.js','/js/crm-charts.js','/user-themes.css','/task-business.js'];
 
 async function vendorAssets() {
   try {
