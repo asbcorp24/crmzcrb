@@ -72,6 +72,26 @@
     }
   }
 
+  function addDirectoriesMenu() {
+    if (document.querySelector('a[href="/directories"]')) return;
+    const managerSection = [...document.querySelectorAll('.sidebar-section')].find(x => x.textContent.trim() === 'Руководителю');
+    if (managerSection) {
+      const a = document.createElement('a');
+      a.className = 'nav-link rounded' + (location.pathname.startsWith('/directories') ? ' active' : '');
+      a.href = '/directories';
+      a.innerHTML = '<i class="bi bi-journal-bookmark-fill me-2"></i>Справочники';
+      managerSection.parentNode.insertBefore(a, managerSection.nextSibling);
+    }
+    const mobileManager = [...document.querySelectorAll('.mobile-section-title')].find(x => x.textContent.trim() === 'Руководителю');
+    if (mobileManager) {
+      const a = document.createElement('a');
+      a.className = 'mobile-menu-link' + (location.pathname.startsWith('/directories') ? ' active' : '');
+      a.href = '/directories';
+      a.innerHTML = '<i class="bi bi-journal-bookmark-fill"></i><span>Справочники</span>';
+      mobileManager.parentNode.insertBefore(a, mobileManager.nextSibling);
+    }
+  }
+
   function enhanceProductionMeetings() {
     if (!location.pathname.startsWith('/production-meetings')) return;
     const apply = () => {
@@ -199,6 +219,7 @@
     syncSubscription();
     addUserSettingsMenu();
     addProductionMeetingsMenu();
+    addDirectoriesMenu();
     addAnalyticsMenu();
     enhanceProductionMeetings();
     openTaskFromQuery();
