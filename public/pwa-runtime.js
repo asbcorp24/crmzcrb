@@ -34,7 +34,6 @@
 
   function addUserSettingsMenu() {
     if (document.querySelector('a[href="/my-settings"]')) return;
-
     const systemSection = [...document.querySelectorAll('.sidebar-section')].find(x => x.textContent.trim() === 'Система');
     if (systemSection) {
       const a = document.createElement('a');
@@ -43,7 +42,6 @@
       a.innerHTML = '<i class="bi bi-palette me-2"></i>Мои настройки';
       systemSection.parentNode.insertBefore(a, systemSection.nextSibling);
     }
-
     const mobileSystem = [...document.querySelectorAll('.mobile-section-title')].find(x => x.textContent.trim() === 'Система');
     if (mobileSystem) {
       const a = document.createElement('a');
@@ -51,6 +49,26 @@
       a.href = '/my-settings';
       a.innerHTML = '<i class="bi bi-palette"></i><span>Мои настройки</span>';
       mobileSystem.parentNode.insertBefore(a, mobileSystem.nextSibling);
+    }
+  }
+
+  function addProductionMeetingsMenu() {
+    if (document.querySelector('a[href="/production-meetings"]')) return;
+    const managerSection = [...document.querySelectorAll('.sidebar-section')].find(x => x.textContent.trim() === 'Руководителю');
+    if (managerSection) {
+      const a = document.createElement('a');
+      a.className = 'nav-link rounded' + (location.pathname.startsWith('/production-meetings') ? ' active' : '');
+      a.href = '/production-meetings';
+      a.innerHTML = '<i class="bi bi-clipboard2-check me-2"></i>Производственные совещания';
+      managerSection.parentNode.insertBefore(a, managerSection.nextSibling);
+    }
+    const mobileManager = [...document.querySelectorAll('.mobile-section-title')].find(x => x.textContent.trim() === 'Руководителю');
+    if (mobileManager) {
+      const a = document.createElement('a');
+      a.className = 'mobile-menu-link' + (location.pathname.startsWith('/production-meetings') ? ' active' : '');
+      a.href = '/production-meetings';
+      a.innerHTML = '<i class="bi bi-clipboard2-check"></i><span>Производственные совещания</span>';
+      mobileManager.parentNode.insertBefore(a, mobileManager.nextSibling);
     }
   }
 
@@ -140,6 +158,7 @@
     syncThemeFromServer();
     syncSubscription();
     addUserSettingsMenu();
+    addProductionMeetingsMenu();
     addAnalyticsMenu();
     addDashboardAnalytics();
   });
