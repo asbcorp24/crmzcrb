@@ -72,6 +72,46 @@
     }
   }
 
+  function enhanceProductionMeetings() {
+    if (!location.pathname.startsWith('/production-meetings')) return;
+    const apply = () => {
+      document.querySelectorAll('#itemsBody tr').forEach(row => {
+        if (row.dataset.protocolLinked === '1') return;
+        const link = row.querySelector('a[href*="?task="]');
+        if (!link) return;
+        row.dataset.protocolLinked = '1';
+        row.style.cursor = 'pointer';
+        row.title = 'Открыть связанную задачу';
+        row.addEventListener('click', event => {
+          if (event.target.closest('button,a,input,select,textarea')) return;
+          location.href = link.href;
+        });
+        const taskCell = row.children[1];
+        if (taskCell) {
+          taskCell.classList.add('text-primary');
+          taskCell.title = 'Открыть связанную задачу';
+        }
+      });
+    };
+    apply();
+    const body = document.getElementById('itemsBody');
+    if (body) new MutationObserver(apply).observe(body, {childList:true, subtree:true});
+  }
+
+  function openTaskFromQuery() {
+    if (location.pathname !== '/tasks') return;
+    const id = Number(new URLSearchParams(location.search).get('task'));
+    if (!id) return;
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts++;
+      if (typeof window.openTask === 'function') {
+        clearInterval(timer);
+        window.openTask(id);
+      } else if (attempts >= 30) clearInterval(timer);
+    }, 100);
+  }
+
   applyCachedTheme();
 
   async function currentSubscription() {
@@ -160,6 +200,8 @@
     addUserSettingsMenu();
     addProductionMeetingsMenu();
     addAnalyticsMenu();
+    enhanceProductionMeetings();
+    openTaskFromQuery();
     addDashboardAnalytics();
   });
 })();
