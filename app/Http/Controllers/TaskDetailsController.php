@@ -27,6 +27,7 @@ class TaskDetailsController extends Controller
             'statuses' => $this->refs('task_status'),
             'departments' => Department::whereIn('id', $departmentIds)->where('is_active', true)
                 ->orderBy('name')->get(['id','name','short_name']),
+            'can_create_reference' => $user->isManager(),
         ]);
     }
 
