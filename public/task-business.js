@@ -44,6 +44,121 @@
     if (selected) select.value = String(selected);
   }
 
+  let referenceTarget = null;
+  let referenceType = null;
+
+  function ensureReferenceModal() {
+    if (document.getElementById('taskReferenceModal')) return;
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = 'taskReferenceModal';
+    modal.tabIndex = -1;
+    modal.innerHTML = `
+      <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="taskReferenceModalTitle">Добавить запись</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <div id="taskReferenceError" class="alert alert-danger d-none"></div>
+          <div class="mb-3"><label class="form-label">Наименование</label><input id="taskReferenceName" class="form-control" maxlength="255"></div>
+          <div class="mb-3"><label class="form-label">Код <span class="text-muted">(необязательно)</span></label><input id="taskReferenceCode" class="form-control" maxlength="80"></div>
+          <div id="taskReferenceStatusFields" class="d-none">
+            <div class="mb-3"><label class="form-label">Системный статус</label><select id="taskReferenceSystemKey" class="form-select">
+              <option value="new">Новая</option><option value="in_progress">В работе</option><option value="review">На проверке</option><option value="completed">Выполнена</option><option value="cancelled">Отменена</option>
+            </select></div>
+            <div class="mb-3"><label class="form-label">Цвет</label><input id="taskReferenceColor" type="color" class="form-control form-control-color" value="#0d6efd"></div>
+          </div>
+          <div class="mb-0"><label class="form-label">Примечание <span class="text-muted">(необязательно)</span></label><textarea id="taskReferenceNotes" class="form-control" rows="3"></textarea></div>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Отмена</button><button type="button" id="saveTaskReference" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Добавить</button></div>
+      </div></div>`;
+    document.body.appendChild(modal);
+    document.getElementById('saveTaskReference')?.addEventListener('click', saveReferenceFromTask);
+  }
+
+  function addReferenceButton(select, type, label) {
+    if (!select || !options?.can_create_reference || select.dataset.referenceAddReady === '1') return;
+    select.dataset.referenceAddReady = '1';
+    const wrap = document.createElement('div');
+    wrap.className = 'input-group';
+    select.parentNode.insertBefore(wrap, select);
+    wrap.appendChild(select);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-outline-secondary';
+    btn.title = 'Добавить в справочник: ' + label;
+    btn.innerHTML = '<i class="bi bi-plus-lg"></i>';
+    btn.addEventListener('click', () => openReferenceModal(select, type, label));
+    wrap.appendChild(btn);
+  }
+
+  function openReferenceModal(select, type, label) {
+    ensureReferenceModal();
+    referenceTarget = select;
+    referenceType = type;
+    document.getElementById('taskReferenceModalTitle').textContent = 'Добавить: ' + label;
+    document.getElementById('taskReferenceName').value = '';
+    document.getElementById('taskReferenceCode').value = '';
+    document.getElementById('taskReferenceNotes').value = '';
+    document.getElementById('taskReferenceError').classList.add('d-none');
+    document.getElementById('taskReferenceStatusFields').classList.toggle('d-none', type !== 'task_status');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('taskReferenceModal')).show();
+    setTimeout(() => document.getElementById('taskReferenceName')?.focus(), 150);
+  }
+
+  async function saveReferenceFromTask() {
+    const name = document.getElementById('taskReferenceName').value.trim();
+    if (!name) return showReferenceError('Введите наименование.');
+    const payload = {
+      type: referenceType,
+      name,
+      code: document.getElementById('taskReferenceCode').value.trim() || null,
+      notes: document.getElementById('taskReferenceNotes').value.trim() || null,
+      sort_order: 0,
+      is_active: true
+    };
+    if (referenceType === 'task_status') {
+      payload.system_key = document.getElementById('taskReferenceSystemKey').value;
+      payload.color = document.getElementById('taskReferenceColor').value || '#0d6efd';
+    }
+    try {
+      const r = await json('/ajax/directories', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      options = null;
+      await loadOptions();
+      refreshReferenceSelects();
+      if (referenceTarget && r.item?.id) {
+        referenceTarget.value = String(r.item.id);
+        referenceTarget.dispatchEvent(new Event('change', {bubbles:true}));
+      }
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('taskReferenceModal')).hide();
+    } catch (e) { showReferenceError(e.message); }
+  }
+
+  function showReferenceError(message) {
+    const box = document.getElementById('taskReferenceError');
+    if (!box) return alert(message);
+    box.textContent = message;
+    box.classList.remove('d-none');
+  }
+
+  function refillSelect(select, rows, placeholder) {
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = makeOptions(rows, placeholder);
+    if ([...select.options].some(x => x.value === current)) select.value = current;
+  }
+
+  function refreshReferenceSelects() {
+    refillSelect(document.querySelector('#taskBusinessCreateFields [name="project_id"]'), options.projects, 'Не выбрано');
+    refillSelect(document.querySelector('#taskBusinessCreateFields [name="basis_id"]'), options.bases, 'Не выбрано');
+    refillSelect(document.querySelector('#taskBusinessCreateFields [name="business_status_id"]'), options.statuses, 'Пусто');
+    refillSelect(document.getElementById('taskProject'), options.projects, 'Не выбрано');
+    refillSelect(document.getElementById('taskBasis'), options.bases, 'Не выбрано');
+    refillSelect(document.getElementById('taskBusinessStatus'), options.statuses, 'Пусто');
+    const createType = document.getElementById('createCustomerType')?.value;
+    if (createType === 'organization') refillSelect(document.getElementById('createCustomerId'), options.organizations, 'Выберите...');
+    const detailType = document.getElementById('taskCustomerType')?.value;
+    if (detailType === 'organization') refillSelect(document.getElementById('taskCustomerId'), options.organizations, 'Выберите...');
+  }
+
   async function injectCreateFields() {
     const form = document.getElementById('taskForm');
     if (!form || form.dataset.businessReady === '1') return;
@@ -78,12 +193,23 @@
       </div>`;
     description.parentNode.insertBefore(block, description);
 
+    addReferenceButton(block.querySelector('[name="project_id"]'), 'project', 'Проект');
+    addReferenceButton(block.querySelector('[name="basis_id"]'), 'basis', 'Основание');
+    addReferenceButton(block.querySelector('[name="business_status_id"]'), 'task_status', 'Статус');
+
     const typeSelect = document.getElementById('createCustomerType');
     const customerSelect = document.getElementById('createCustomerId');
     typeSelect?.addEventListener('change', () => {
       const rows = typeSelect.value === 'organization' ? options.organizations : typeSelect.value === 'department' ? options.departments : [];
       customerSelect.innerHTML = makeOptions(rows, typeSelect.value ? 'Выберите...' : 'Сначала выберите тип');
       customerSelect.disabled = !typeSelect.value;
+      const existing = customerSelect.parentElement?.querySelector('[data-customer-reference-add]');
+      if (existing) existing.remove();
+      if (typeSelect.value === 'organization' && options?.can_create_reference) {
+        addReferenceButton(customerSelect, 'organization', 'Предприятие');
+        const btn = customerSelect.parentElement?.querySelector('button');
+        if (btn) btn.dataset.customerReferenceAdd = '1';
+      }
     });
 
     form.addEventListener('submit', () => {
@@ -132,7 +258,13 @@
         <div class="col-12"><button id="saveTaskBusiness" type="button" class="btn btn-sm btn-outline-primary"><i class="bi bi-check2 me-1"></i>Сохранить реквизиты</button></div>
       </div></div>`;
     description.insertAdjacentElement('afterend', block);
-    document.getElementById('taskCustomerType')?.addEventListener('change', e => customerOptions(e.target.value));
+    addReferenceButton(document.getElementById('taskProject'), 'project', 'Проект');
+    addReferenceButton(document.getElementById('taskBasis'), 'basis', 'Основание');
+    addReferenceButton(document.getElementById('taskBusinessStatus'), 'task_status', 'Статус');
+    document.getElementById('taskCustomerType')?.addEventListener('change', e => {
+      customerOptions(e.target.value);
+      if (e.target.value === 'organization') addReferenceButton(document.getElementById('taskCustomerId'), 'organization', 'Предприятие');
+    });
     document.getElementById('saveTaskBusiness')?.addEventListener('click', saveTaskDetails);
   }
 
@@ -178,6 +310,7 @@
     document.getElementById('taskBusinessStatus').value = d.business_status_id || '';
     document.getElementById('taskCustomerType').value = d.customer_type || '';
     customerOptions(d.customer_type || '', d.customer_id || '');
+    if ((d.customer_type || '') === 'organization') addReferenceButton(document.getElementById('taskCustomerId'), 'organization', 'Предприятие');
     const canManage = !!d.can_manage;
     document.querySelectorAll('#taskBusinessBlock input,#taskBusinessBlock select,#saveTaskBusiness').forEach(el => el.disabled = !canManage);
     renderLinks(d.links || []);
