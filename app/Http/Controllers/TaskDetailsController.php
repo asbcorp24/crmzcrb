@@ -21,10 +21,10 @@ class TaskDetailsController extends Controller
         $departmentIds = app(AccessService::class)->departmentIds($user);
 
         return response()->json([
-            'projects' => $this->refs('project'),
-            'bases' => $this->refs('basis'),
-            'organizations' => $this->refs('organization'),
-            'statuses' => $this->refs('task_status'),
+            'projects' => $this->refs('project', $user->organization_id),
+            'bases' => $this->refs('basis', $user->organization_id),
+            'organizations' => $this->refs('organization', $user->organization_id),
+            'statuses' => $this->refs('task_status', $user->organization_id),
             'departments' => Department::whereIn('id', $departmentIds)->where('is_active', true)
                 ->orderBy('name')->get(['id','name','short_name']),
             'can_create_reference' => $user->isManager(),
@@ -69,9 +69,9 @@ class TaskDetailsController extends Controller
             'business_status_id' => 'nullable|integer',
         ]);
 
-        $this->assertReference($data['project_id'] ?? null, 'project', 'Проект');
-        $this->assertReference($data['basis_id'] ?? null, 'basis', 'Основание');
-        $this->assertReference($data['business_status_id'] ?? null, 'task_status', 'Статус');
+        $this->assertReference($data['project_id'] ?? null, 'project', 'Проект', $request->user()->organization_id);
+        $this->assertReference($data['basis_id'] ?? null, 'basis', 'Основание', $request->user()->organization_id);
+        $this->assertReference($data['business_status_id'] ?? null, 'task_status', 'Статус', $request->user()->organization_id);
 
         if (!empty($data['responsible_department_id'])) {
             abort_unless(Department::whereKey($data['responsible_department_id'])->where('is_active', true)->exists(), 422, 'Ответственный отдел не найден.');
@@ -83,7 +83,7 @@ class TaskDetailsController extends Controller
             $data['customer_id'] = null;
         } elseif ($data['customer_type'] === 'organization') {
             abort_if(empty($data['customer_id']), 422, 'Выберите предприятие-заказчика.');
-            $this->assertReference($data['customer_id'], 'organization', 'Заказчик');
+            $this->assertReference($data['customer_id'], 'organization', 'Заказчик', $request->user()->organization_id);
         } else {
             abort_if(empty($data['customer_id']), 422, 'Выберите подразделение-заказчика.');
             abort_unless(Department::whereKey($data['customer_id'])->where('is_active', true)->exists(), 422, 'Подразделение-заказчик не найдено.');
@@ -166,17 +166,21 @@ class TaskDetailsController extends Controller
         return response()->json(['ok'=>true]);
     }
 
-    private function refs(string $type)
+    private function refs(string $type, int $organizationId)
     {
-        return ReferenceItem::where('type',$type)->where('is_active',true)
+        return ReferenceItem::withoutGlobalScope('organization')
+            ->where('organization_id', $organizationId)
+            ->where('type',$type)->where('is_active',true)
             ->orderBy('sort_order')->orderBy('name')->get(['id','code','name','system_key','color']);
     }
 
-    private function assertReference($id, string $type, string $label): void
+    private function assertReference($id, string $type, string $label, int $organizationId): void
     {
         if (!$id) return;
         abort_unless(
-            ReferenceItem::whereKey((int)$id)->where('type',$type)->where('is_active',true)->exists(),
+            ReferenceItem::withoutGlobalScope('organization')
+                ->where('organization_id', $organizationId)
+                ->whereKey((int)$id)->where('type',$type)->where('is_active',true)->exists(),
             422,
             $label.' не найден(о) в справочнике.'
         );
