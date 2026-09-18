@@ -23,7 +23,9 @@ class ReferenceDirectoryController extends Controller
         $type = $request->string('type')->toString();
         abort_unless(in_array($type, self::TYPES, true), 422, 'Неизвестный справочник.');
 
-        $q = ReferenceItem::where('type', $type);
+        $q = ReferenceItem::withoutGlobalScope('organization')
+            ->where('organization_id', $request->user()->organization_id)
+            ->where('type', $type);
         if ($request->filled('q')) {
             $term = trim((string)$request->q);
             $q->where(function ($w) use ($term) {
@@ -52,6 +54,7 @@ class ReferenceDirectoryController extends Controller
     {
         $this->authorizeManager($request);
         $data = $this->validated($request, $referenceItem);
+        abort_unless((int)$referenceItem->organization_id === (int)$request->user()->organization_id, 404);
         $referenceItem->update($data);
         return response()->json(['ok'=>true,'item'=>$referenceItem->fresh()]);
     }
@@ -59,6 +62,7 @@ class ReferenceDirectoryController extends Controller
     public function toggle(Request $request, ReferenceItem $referenceItem)
     {
         $this->authorizeManager($request);
+        abort_unless((int)$referenceItem->organization_id === (int)$request->user()->organization_id, 404);
         $data = $request->validate(['is_active'=>'required|boolean']);
         $referenceItem->update(['is_active'=>$data['is_active']]);
         return response()->json(['ok'=>true,'item'=>$referenceItem->fresh()]);
@@ -84,7 +88,9 @@ class ReferenceDirectoryController extends Controller
 
         if ($data['type'] === 'task_status') {
             abort_unless(in_array($data['system_key'] ?? '', self::STATUS_KEYS, true), 422, 'Для статуса задачи выберите системный статус.');
-            $duplicate = ReferenceItem::where('type','task_status')->where('system_key',$data['system_key']);
+            $duplicate = ReferenceItem::withoutGlobalScope('organization')
+                ->where('organization_id', request()->user()->organization_id)
+                ->where('type','task_status')->where('system_key',$data['system_key']);
             if ($item) $duplicate->whereKeyNot($item->id);
             abort_if($duplicate->exists(), 422, 'Этот системный статус уже есть в справочнике.');
         } else {
@@ -93,7 +99,9 @@ class ReferenceDirectoryController extends Controller
         }
 
         if ($data['code']) {
-            $duplicate = ReferenceItem::where('type',$data['type'])->where('code',$data['code']);
+            $duplicate = ReferenceItem::withoutGlobalScope('organization')
+                ->where('organization_id', request()->user()->organization_id)
+                ->where('type',$data['type'])->where('code',$data['code']);
             if ($item) $duplicate->whereKeyNot($item->id);
             abort_if($duplicate->exists(), 422, 'Запись с таким кодом уже существует.');
         }
