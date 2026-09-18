@@ -75,7 +75,8 @@
   }
 
   function addReferenceButton(select, type, label) {
-    if (!select || !options?.can_create_reference || select.dataset.referenceAddReady === '1') return;
+    if (!select || !options?.can_create_reference) return null;
+    if (select.dataset.referenceAddReady === '1') return select.parentElement?.querySelector('[data-reference-add-button]') || null;
     select.dataset.referenceAddReady = '1';
     const wrap = document.createElement('div');
     wrap.className = 'input-group';
@@ -84,10 +85,18 @@
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'btn btn-outline-secondary';
+    btn.dataset.referenceAddButton = '1';
     btn.title = 'Добавить в справочник: ' + label;
     btn.innerHTML = '<i class="bi bi-plus-lg"></i>';
     btn.addEventListener('click', () => openReferenceModal(select, type, label));
     wrap.appendChild(btn);
+    return btn;
+  }
+
+  function toggleCustomerReferenceButton(select, visible) {
+    if (!select || !options?.can_create_reference) return;
+    const btn = addReferenceButton(select, 'organization', 'Предприятие');
+    if (btn) btn.classList.toggle('d-none', !visible);
   }
 
   function openReferenceModal(select, type, label) {
@@ -203,13 +212,7 @@
       const rows = typeSelect.value === 'organization' ? options.organizations : typeSelect.value === 'department' ? options.departments : [];
       customerSelect.innerHTML = makeOptions(rows, typeSelect.value ? 'Выберите...' : 'Сначала выберите тип');
       customerSelect.disabled = !typeSelect.value;
-      const existing = customerSelect.parentElement?.querySelector('[data-customer-reference-add]');
-      if (existing) existing.remove();
-      if (typeSelect.value === 'organization' && options?.can_create_reference) {
-        addReferenceButton(customerSelect, 'organization', 'Предприятие');
-        const btn = customerSelect.parentElement?.querySelector('button');
-        if (btn) btn.dataset.customerReferenceAdd = '1';
-      }
+      toggleCustomerReferenceButton(customerSelect, typeSelect.value === 'organization');
     });
 
     form.addEventListener('submit', () => {
@@ -263,7 +266,7 @@
     addReferenceButton(document.getElementById('taskBusinessStatus'), 'task_status', 'Статус');
     document.getElementById('taskCustomerType')?.addEventListener('change', e => {
       customerOptions(e.target.value);
-      if (e.target.value === 'organization') addReferenceButton(document.getElementById('taskCustomerId'), 'organization', 'Предприятие');
+      toggleCustomerReferenceButton(document.getElementById('taskCustomerId'), e.target.value === 'organization');
     });
     document.getElementById('saveTaskBusiness')?.addEventListener('click', saveTaskDetails);
   }
@@ -310,7 +313,7 @@
     document.getElementById('taskBusinessStatus').value = d.business_status_id || '';
     document.getElementById('taskCustomerType').value = d.customer_type || '';
     customerOptions(d.customer_type || '', d.customer_id || '');
-    if ((d.customer_type || '') === 'organization') addReferenceButton(document.getElementById('taskCustomerId'), 'organization', 'Предприятие');
+    toggleCustomerReferenceButton(document.getElementById('taskCustomerId'), (d.customer_type || '') === 'organization');
     const canManage = !!d.can_manage;
     document.querySelectorAll('#taskBusinessBlock input,#taskBusinessBlock select,#saveTaskBusiness').forEach(el => el.disabled = !canManage);
     renderLinks(d.links || []);
