@@ -198,6 +198,7 @@
           <div class="col-md-4"><label class="form-label">Тип заказчика</label><select name="customer_type" id="createCustomerType" class="form-select"><option value="">Не выбран</option><option value="organization">Предприятие</option><option value="department">Отдел</option></select></div>
           <div class="col-md-4"><label class="form-label">Заказчик</label><select name="customer_id" id="createCustomerId" class="form-select" disabled><option value="">Сначала выберите тип</option></select></div>
           <div class="col-md-4"><label class="form-label">Статус</label><select name="business_status_id" class="form-select">${makeOptions(options.statuses, 'Пусто')}</select></div>
+          <div class="col-12"><div class="form-check mt-1"><input class="form-check-input" type="checkbox" name="add_to_plan" value="1" id="createAddToPlan"><label class="form-check-label fw-semibold" for="createAddToPlan">Добавить в план сотрудника на текущий месяц</label><div class="form-text">Если у выбранного сотрудника есть активный или черновой месячный план, задача будет автоматически добавлена в него.</div></div></div>
         </div>
       </div>`;
     description.parentNode.insertBefore(block, description);
@@ -438,6 +439,11 @@
       const data = response || xhr.responseJSON;
       const id = data?.task?.id;
       if (!id) return;
+      if (data?.plan_attached && data?.plan?.title) {
+        setTimeout(() => alert('Задача добавлена в план: ' + data.plan.title), 50);
+      } else if (data?.plan_message) {
+        setTimeout(() => alert(data.plan_message), 50);
+      }
       const meta = pendingCreateMeta;
       pendingCreateMeta = null;
       json(`/ajax/tasks/${id}/details`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(meta)})
