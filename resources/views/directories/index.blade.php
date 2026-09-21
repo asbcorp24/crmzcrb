@@ -12,7 +12,7 @@
 <div class="card border-0 shadow-sm">
     <div class="card-header bg-white d-flex flex-wrap gap-2 align-items-center">
         <div>
-            <b id="directoryTitle">Проекты</b>
+            <div class="d-flex align-items-center gap-2"><b id="directoryTitle">Проекты</b><span id="directoryCount" class="badge text-bg-light border">0</span></div>
             <div class="small text-muted" id="directoryHint">Справочник проектов организации</div>
         </div>
         <div class="ms-auto d-flex gap-2 flex-wrap">
@@ -61,9 +61,14 @@ const directoryMeta={
 function dEsc(v){return $('<div>').text(v??'').html()}
 function loadDirectory(){
     $('#directoryRows').html('<tr><td colspan="9" class="text-center text-muted py-4">Загрузка...</td></tr>');
-    $.get('{{ route('directories.index') }}',{type:directoryType,q:$('#directorySearch').val(),active:$('#directoryActive').val()},r=>{
-        directoryItems=r||[]; renderDirectory();
-    }).fail(x=>$('#directoryRows').html(`<tr><td colspan="9" class="text-danger text-center py-4">${dEsc(x.responseJSON?.message||'Ошибка загрузки')}</td></tr>`));
+    $.get('{{ route('directories.index') }}',{type:directoryType,q:$('#directorySearch').val(),active:$('#directoryActive').val(),_ts:Date.now()},r=>{
+        directoryItems=Array.isArray(r)?r:(r.items||[]);
+        $('#directoryCount').text(r.count ?? directoryItems.length);
+        renderDirectory();
+    }).fail(x=>{
+        $('#directoryCount').text('!');
+        $('#directoryRows').html(`<tr><td colspan="9" class="text-danger text-center py-4">${dEsc(x.responseJSON?.message||'Ошибка загрузки')}</td></tr>`);
+    });
 }
 function renderDirectory(){
     const status=directoryType==='task_status';
@@ -72,7 +77,7 @@ function renderDirectory(){
     directoryItems.forEach((x,i)=>{
         h+=`<tr class="${x.is_active?'':'opacity-50'}"><td>${i+1}</td><td>${dEsc(x.code||'—')}</td><td><b>${dEsc(x.name)}</b></td>${status?`<td><code>${dEsc(x.system_key||'')}</code></td><td><span class="d-inline-block rounded-circle border" style="width:24px;height:24px;background:${dEsc(x.color||'#6c757d')}"></span></td>`:''}<td>${dEsc(x.notes||'')}</td><td>${x.sort_order||0}</td><td><div class="form-check form-switch"><input class="form-check-input" type="checkbox" ${x.is_active?'checked':''} onchange="toggleDirectory(${x.id},this.checked)"></div></td><td><button class="btn btn-sm btn-outline-primary" onclick="editDirectory(${x.id})"><i class="bi bi-pencil"></i></button></td></tr>`;
     });
-    if(!h) h='<tr><td colspan="9" class="text-center text-muted py-4">Записей пока нет</td></tr>';
+    if(!h) h='<tr><td colspan="9" class="text-center text-muted py-4">Записей пока нет. Если вы только что добавили запись, нажмите Ctrl+F5.</td></tr>';
     $('#directoryRows').html(h);
 }
 function switchDirectory(type){
@@ -100,7 +105,15 @@ $('#directoryForm').on('submit',function(e){
     e.preventDefault(); $('#directoryError').addClass('d-none');
     const id=$('#directoryId').val(); const data={type:directoryType,code:$('#directoryCode').val(),name:$('#directoryName').val(),notes:$('#directoryNotes').val(),sort_order:$('#directorySort').val(),is_active:$('#directoryEnabled').is(':checked')?1:0};
     if(directoryType==='task_status'){data.system_key=$('#directorySystemKey').val();data.color=$('#directoryColor').val()}
-    $.ajax({url:id?`{{ url('/ajax/directories') }}/${id}`:'{{ route('directories.store') }}',method:id?'PATCH':'POST',data}).done(()=>{bootstrap.Modal.getInstance(document.getElementById('directoryModal')).hide();loadDirectory()}).fail(x=>$('#directoryError').removeClass('d-none').text(x.responseJSON?.message||Object.values(x.responseJSON?.errors||{}).flat()[0]||'Ошибка сохранения'));
+    $.ajax({url:id?`{{ url('/ajax/directories') }}/${id}`:'{{ route('directories.store') }}',method:id?'PATCH':'POST',data}).done(r=>{
+        bootstrap.Modal.getInstance(document.getElementById('directoryModal')).hide();
+        if(!id && r?.item){
+            directoryItems.push(r.item);
+            $('#directoryCount').text(directoryItems.length);
+            renderDirectory();
+        }
+        loadDirectory();
+    }).fail(x=>$('#directoryError').removeClass('d-none').text(x.responseJSON?.message||Object.values(x.responseJSON?.errors||{}).flat()[0]||'Ошибка сохранения'));
 });
 loadDirectory();
 </script>
