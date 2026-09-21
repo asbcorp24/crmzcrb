@@ -6,6 +6,7 @@ use App\Models\CrmNotification;
 use App\Models\Department;
 use App\Models\EmployeeAssignment;
 use App\Models\Position;
+use App\Models\ReferenceItem;
 use App\Models\Task;
 use App\Models\TaskEvent;
 use App\Models\TaskTag;
@@ -27,6 +28,10 @@ class AdvancedTaskController extends Controller
             'departments'=>Department::whereIn('id',$access->departmentIds($request->user()))->where('is_active',true)->orderBy('name')->get(),
             'positions'=>Position::where('is_active',true)->orderBy('name')->get(),
             'tags'=>TaskTag::where('is_active',true)->orderBy('name')->get(),
+            'projects'=>ReferenceItem::withoutGlobalScope('organization')->where('organization_id',$request->user()->organization_id)->where('type','project')->where('is_active',true)->orderBy('sort_order')->orderBy('name')->get(),
+            'bases'=>ReferenceItem::withoutGlobalScope('organization')->where('organization_id',$request->user()->organization_id)->where('type','basis')->where('is_active',true)->orderBy('sort_order')->orderBy('name')->get(),
+            'organizations'=>ReferenceItem::withoutGlobalScope('organization')->where('organization_id',$request->user()->organization_id)->where('type','organization')->where('is_active',true)->orderBy('sort_order')->orderBy('name')->get(),
+            'businessStatuses'=>ReferenceItem::withoutGlobalScope('organization')->where('organization_id',$request->user()->organization_id)->where('type','task_status')->where('is_active',true)->orderBy('sort_order')->orderBy('name')->get(),
         ]);
     }
 
@@ -36,10 +41,28 @@ class AdvancedTaskController extends Controller
         $data=$request->validate([
             'target_type'=>['required',Rule::in(['users','department','managers','position'])],
             'user_ids'=>'nullable|array','user_ids.*'=>'integer','department_id'=>'nullable|integer','position_id'=>'nullable|integer',
-            'title'=>'required|string|max:255','description'=>'nullable|string','priority'=>['required',Rule::in(['low','normal','high','critical'])],
+            'title'=>'nullable|string|max:255','description'=>'nullable|string','priority'=>['required',Rule::in(['low','normal','high','critical'])],
             'due_at'=>'nullable|date','tag_ids'=>'nullable|array','tag_ids.*'=>'integer',
+            'project_id'=>'nullable|integer','basis_id'=>'nullable|integer','responsible_department_id'=>'nullable|integer',
+            'start_at'=>'nullable|date','customer_type'=>['nullable',Rule::in(['organization','department'])],
+            'customer_id'=>'nullable|integer','business_status_id'=>'nullable|integer',
         ]);
         $access=app(AccessService::class); $allowed=$access->userIds($request->user(),true)->map(fn($x)=>(int)$x);
+        $orgId=(int)$request->user()->organization_id;
+        $this->assertBulkReference($data['project_id']??null,'project',$orgId,'Проект');
+        $this->assertBulkReference($data['basis_id']??null,'basis',$orgId,'Основание');
+        $this->assertBulkReference($data['business_status_id']??null,'task_status',$orgId,'Статус');
+        if(!empty($data['responsible_department_id'])) abort_unless($access->departmentIds($request->user())->contains((int)$data['responsible_department_id']),403);
+        if(!empty($data['customer_type'])){
+            abort_if(empty($data['customer_id']),422,'Выберите заказчика');
+            if($data['customer_type']==='organization') $this->assertBulkReference($data['customer_id'],'organization',$orgId,'Заказчик');
+            else abort_unless($access->departmentIds($request->user())->contains((int)$data['customer_id']),403);
+        } else { $data['customer_type']=null; $data['customer_id']=null; }
+        $title=trim((string)($data['title']??''));
+        if($title===''){
+            $title=$this->bulkFallbackTitle($data['project_id']??null,$data['basis_id']??null,$orgId);
+            $data['title']=$title;
+        }
         if(!empty($data['tag_ids'])) $this->assertTagsBelongToOrganization($data['tag_ids']);
         if($data['target_type']==='department' && !empty($data['department_id'])) abort_unless($access->departmentIds($request->user())->contains((int)$data['department_id']),403);
         if($data['target_type']==='position' && !empty($data['position_id'])) abort_unless(Position::whereKey($data['position_id'])->where('is_active',true)->exists(),422,'Должность не найдена в вашей организации');
@@ -50,7 +73,7 @@ class AdvancedTaskController extends Controller
             'position'=>EmployeeAssignment::whereNull('ended_at')->whereHas('user',fn($q)=>$q->where('is_active',true)->whereNull('archived_at'))->whereHas('staffingPosition',fn($q)=>$q->where('position_id',$data['position_id']??0))->pluck('user_id'),
         };
         $targets=$targets->unique()->filter(fn($id)=>$allowed->contains((int)$id))->values(); abort_if($targets->isEmpty(),422,'Не найдено доступных исполнителей');
-        $created=DB::transaction(function()use($request,$data,$targets){$items=collect();foreach($targets as $id){$task=Task::create(['organization_id'=>$request->user()->organization_id,'created_by'=>$request->user()->id,'assigned_to'=>$id,'title'=>$data['title'],'description'=>$data['description']??null,'priority'=>$data['priority'],'status'=>'new','progress'=>0,'due_at'=>$data['due_at']??null]);if(!empty($data['tag_ids']))$task->tags()->sync($data['tag_ids']);TaskEvent::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'type'=>'created','to_status'=>'new','message'=>'Создано массовой постановкой']);if((int)$id!==$request->user()->id)CrmNotification::create(['user_id'=>$id,'task_id'=>$task->id,'type'=>'task_assigned','title'=>'Новая массовая задача','body'=>$task->title,'url'=>route('tasks.page',['task'=>$task->id],false)]);$items->push($task);}return $items;});
+        $created=DB::transaction(function()use($request,$data,$targets){$items=collect();foreach($targets as $id){$task=Task::create(['organization_id'=>$request->user()->organization_id,'created_by'=>$request->user()->id,'assigned_to'=>$id,'title'=>$data['title'],'description'=>$data['description']??null,'priority'=>$data['priority'],'status'=>'new','progress'=>0,'due_at'=>$data['due_at']??null]);DB::table('tasks')->where('id',$task->id)->update(['project_id'=>$data['project_id']??null,'basis_id'=>$data['basis_id']??null,'responsible_department_id'=>$data['responsible_department_id']??null,'start_at'=>$data['start_at']??null,'customer_type'=>$data['customer_type']??null,'customer_id'=>$data['customer_id']??null,'business_status_id'=>$data['business_status_id']??null,'updated_at'=>now()]);if(!empty($data['tag_ids']))$task->tags()->sync($data['tag_ids']);TaskEvent::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'type'=>'created','to_status'=>'new','message'=>'Создано массовой постановкой']);if((int)$id!==$request->user()->id)CrmNotification::create(['user_id'=>$id,'task_id'=>$task->id,'type'=>'task_assigned','title'=>'Новая массовая задача','body'=>$task->title,'url'=>route('tasks.page',['task'=>$task->id],false)]);$items->push($task->fresh());}return $items;});
         return response()->json(['ok'=>true,'created'=>$created->count(),'task_ids'=>$created->pluck('id')],201);
     }
 
@@ -93,6 +116,8 @@ class AdvancedTaskController extends Controller
 
     public function archive(Request $request, Task $task){$this->authorizeManage($request,$task);abort_unless(in_array($task->status,['completed','cancelled'],true),422,'В архив можно отправить только завершённую или отменённую задачу');$task->update(['archived_at'=>now(),'archived_by'=>$request->user()->id]);return response()->json(['ok'=>true]);}
 
+    private function assertBulkReference($id,string $type,int $orgId,string $label):void{if(!$id)return;abort_unless(ReferenceItem::withoutGlobalScope('organization')->where('organization_id',$orgId)->whereKey((int)$id)->where('type',$type)->where('is_active',true)->exists(),422,$label.' не найден(о) в справочнике');}
+    private function bulkFallbackTitle($projectId,$basisId,int $orgId):string{if($projectId){$name=ReferenceItem::withoutGlobalScope('organization')->where('organization_id',$orgId)->whereKey((int)$projectId)->where('type','project')->value('name');if($name)return $name;}if($basisId){$name=ReferenceItem::withoutGlobalScope('organization')->where('organization_id',$orgId)->whereKey((int)$basisId)->where('type','basis')->value('name');if($name)return $name;}return 'Задача';}
     private function assertTagsBelongToOrganization(array $ids):void{if(!$ids)return;$unique=collect($ids)->map(fn($x)=>(int)$x)->unique();abort_unless(TaskTag::whereIn('id',$unique)->count()===$unique->count(),422,'Одна или несколько меток не принадлежат вашей организации');}
     private function wouldCreateCycle(Task $task,Task $blocker):bool{$target=(int)$task->id;$frontier=collect([(int)$blocker->id]);$seen=[];while($frontier->isNotEmpty()){if($frontier->contains($target))return true;$ids=$frontier->reject(fn($id)=>isset($seen[(int)$id]))->map(fn($id)=>(int)$id)->values();if($ids->isEmpty())break;foreach($ids as $id)$seen[$id]=true;$frontier=Task::whereIn('id',$ids)->get()->flatMap(fn(Task $t)=>$t->blockers()->pluck('tasks.id'))->map(fn($id)=>(int)$id)->unique()->values();}return false;}
     private function authorizeView(Request $request,Task $task):void{$u=$request->user();if($u->isAdmin()||$task->assigned_to===$u->id||$task->created_by===$u->id)return;abort_unless($u->isManager()&&app(AccessService::class)->userIds($u,true)->contains((int)$task->assigned_to),403);}
