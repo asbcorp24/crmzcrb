@@ -104,7 +104,8 @@ class TaskTemplateController extends Controller
         if(empty($data['customer_type'])){$data['customer_type']=null;$data['customer_id']=null;}
         elseif($data['customer_type']==='organization'){abort_if(empty($data['customer_id']),422,'Выберите предприятие-заказчика');$this->assertReference($data['customer_id'],'organization',$orgId,'Заказчик');}
         else{abort_if(empty($data['customer_id']),422,'Выберите подразделение-заказчика');abort_unless($access->departmentIds($request->user())->contains((int)$data['customer_id']),403);}
-        $data['title']=trim((string)($data['title']??''))?:null;
+        $data['title']=trim((string)($data['title']??''));
+        if($data['title']==='')$data['title']=$this->fallbackTitle($data['project_id']??null,$data['basis_id']??null,$orgId);
         $data['add_to_plan']=!empty($data['add_to_plan']);
         $checklist=array_values(array_filter(array_map('trim',$data['checklist']??[])));unset($data['checklist']);
         if($data['recurrence']==='none'){$data['next_run_at']=null;$data['weekday']=null;$data['day_of_month']=null;}else{if(empty($data['next_run_at']))$data['next_run_at']=now();if($data['recurrence']!=='weekly')$data['weekday']=null;if($data['recurrence']!=='monthly')$data['day_of_month']=null;}
