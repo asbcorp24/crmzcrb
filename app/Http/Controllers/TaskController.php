@@ -126,7 +126,7 @@ class TaskController extends Controller
 
     public function toggleChecklistItem(Request $request, Task $task, TaskChecklistItem $item)
     {
-        $this->authorizeTask($request, $task); abort_unless($item->task_id===$task->id,404);
+        $this->authorizeTask($request, $task); abort_unless((int)$item->task_id === (int)$task->id,404);
         abort_if(in_array($task->status,['completed','cancelled'],true),422,'Нельзя менять чек-лист закрытой задачи');
         abort_unless($task->assigned_to === $request->user()->id || $this->canManageTask($request, $task), 403);
         $done=$request->boolean('is_done');
