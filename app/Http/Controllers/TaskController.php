@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CrmNotification;
 use App\Models\Task;
+use App\Models\Plan;
 use App\Models\TaskChecklistItem;
 use App\Models\TaskComment;
 use App\Models\TaskDeadlineChange;
@@ -60,19 +61,43 @@ class TaskController extends Controller
         $data = $request->validate([
             'plan_id'=>'nullable|exists:plans,id','assigned_to'=>'required|exists:users,id','title'=>'required|string|max:255',
             'description'=>'nullable|string','priority'=>['required',Rule::in(['low','normal','high','critical'])],
-            'due_at'=>'nullable|date'
+            'due_at'=>'nullable|date','add_to_plan'=>'nullable|boolean'
         ]);
 
         $ids = app(AccessService::class)->userIds($request->user(), true);
         abort_unless($ids->contains((int)$data['assigned_to']), 403);
         if (!$request->user()->isManager()) abort_unless((int)$data['assigned_to'] === (int)$request->user()->id, 403);
 
+        $addToPlan = !empty($data['add_to_plan']);
+        unset($data['add_to_plan']);
+        $linkedPlan = null;
+        if ($addToPlan) {
+            $monthStart = now()->copy()->startOfMonth()->toDateString();
+            $monthEnd = now()->copy()->endOfMonth()->toDateString();
+            $linkedPlan = Plan::where('user_id', (int)$data['assigned_to'])
+                ->where('period_type', 'month')
+                ->whereDate('period_start', '<=', $monthEnd)
+                ->whereDate('period_end', '>=', $monthStart)
+                ->whereIn('status', ['active','draft'])
+                ->orderByRaw("CASE WHEN status = 'active' THEN 0 ELSE 1 END")
+                ->orderByDesc('period_start')
+                ->orderByDesc('id')
+                ->first();
+            if ($linkedPlan) $data['plan_id'] = $linkedPlan->id;
+        }
+
         $data['created_by'] = $request->user()->id;
         $data['status'] = 'new';
         $task = Task::create($data);
-        $this->event($task, $request->user()->id, 'created', null, $task->status, 'Задача создана');
+        $this->event($task, $request->user()->id, 'created', null, $task->status, $linkedPlan ? 'Задача создана и добавлена в план #'.$linkedPlan->id : 'Задача создана');
         if ($task->assigned_to !== $request->user()->id) $this->notify($task->assigned_to, $task, 'task_assigned', 'Новая задача', $task->title);
-        return response()->json(['ok'=>true,'task'=>$task->load(['assignee','creator'])], 201);
+        return response()->json([
+            'ok'=>true,
+            'task'=>$task->load(['assignee','creator','plan']),
+            'plan_attached'=>(bool)$linkedPlan,
+            'plan'=>$linkedPlan ? ['id'=>$linkedPlan->id,'title'=>$linkedPlan->title] : null,
+            'plan_message'=>$addToPlan && !$linkedPlan ? 'План сотрудника на текущий месяц не найден.' : null,
+        ], 201);
     }
 
     public function update(Request $request, Task $task)
