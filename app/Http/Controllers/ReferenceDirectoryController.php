@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ReferenceItem;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
 
 class ReferenceDirectoryController extends Controller
 {
@@ -23,9 +24,11 @@ class ReferenceDirectoryController extends Controller
         $type = $request->string('type')->toString();
         abort_unless(in_array($type, self::TYPES, true), 422, 'Неизвестный справочник.');
 
-        $q = ReferenceItem::withoutGlobalScope('organization')
-            ->where('organization_id', $request->user()->organization_id)
+        $organizationId = (int)$request->user()->organization_id;
+        $q = DB::table('reference_items')
+            ->where('organization_id', $organizationId)
             ->where('type', $type);
+
         if ($request->filled('q')) {
             $term = trim((string)$request->q);
             $q->where(function ($w) use ($term) {
@@ -34,19 +37,44 @@ class ReferenceDirectoryController extends Controller
                     ->orWhere('notes', 'like', '%'.$term.'%');
             });
         }
-        if ($request->has('active') && $request->active !== '') {
+        if ($request->filled('active')) {
             $q->where('is_active', $request->boolean('active'));
         }
 
-        return response()->json($q->orderBy('sort_order')->orderBy('name')->get());
+        $items = $q->orderBy('sort_order')->orderBy('name')->get()->map(function ($row) {
+            $row->is_active = (bool)$row->is_active;
+            $row->sort_order = (int)$row->sort_order;
+            return $row;
+        })->values();
+
+        return response()->json([
+            'items' => $items,
+            'count' => $items->count(),
+            'organization_id' => $organizationId,
+            'type' => $type,
+        ]);
     }
 
     public function store(Request $request)
     {
         $this->authorizeManager($request);
         $data = $this->validated($request);
-        $data['organization_id'] = $request->user()->organization_id;
-        $item = ReferenceItem::create($data);
+        $organizationId = (int)$request->user()->organization_id;
+        $now = now();
+        $id = DB::table('reference_items')->insertGetId([
+            'organization_id' => $organizationId,
+            'type' => $data['type'],
+            'code' => $data['code'] ?? null,
+            'name' => $data['name'],
+            'system_key' => $data['system_key'] ?? null,
+            'color' => $data['color'] ?? null,
+            'notes' => $data['notes'] ?? null,
+            'sort_order' => $data['sort_order'] ?? 0,
+            'is_active' => $data['is_active'] ?? true,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $item = DB::table('reference_items')->where('id', $id)->first();
         return response()->json(['ok'=>true,'item'=>$item], 201);
     }
 
