@@ -40,6 +40,16 @@ class ExternalCrmService
         ]);
     }
 
+    public function plansReport(Organization $organization, string $month): array
+    {
+        return $this->get($organization, '/api/crm/v1/plans/report', ['month' => $month]);
+    }
+
+    public function plansAnalytics(Organization $organization, string $month): array
+    {
+        return $this->get($organization, '/api/crm/v1/plans/analytics', ['month' => $month]);
+    }
+
     public function createTask(Organization $organization, array $payload): array
     {
         return $this->send($organization, 'POST', '/api/crm/v1/tasks', $payload);
