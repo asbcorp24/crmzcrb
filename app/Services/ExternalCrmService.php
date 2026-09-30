@@ -3,9 +3,7 @@
 namespace App\Services;
 
 use App\Models\Organization;
-use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Crypt;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 class ExternalCrmService
@@ -62,9 +60,12 @@ class ExternalCrmService
 
     public function get(Organization $organization, string $path, array $query = []): array
     {
-        $response = $this->client($organization)->get($this->url($organization, $path), $query);
+        $url = $this->url($organization, $path);
+        if ($query) {
+            $url .= (str_contains($url, '?') ? '&' : '?').http_build_query($query);
+        }
 
-        return $this->response($response->status(), $response->json(), $response->body());
+        return $this->request($organization, 'GET', $url);
     }
 
     private function all(Organization $organization, string $path, array $query = []): array
@@ -90,15 +91,20 @@ class ExternalCrmService
 
     private function send(Organization $organization, string $method, string $path, array $payload): array
     {
-        $response = $this->client($organization)
-            ->withHeaders(['Content-Type' => 'application/json'])
-            ->send($method, $this->url($organization, $path), ['json' => $payload]);
-
-        return $this->response($response->status(), $response->json(), $response->body());
+        return $this->request(
+            $organization,
+            $method,
+            $this->url($organization, $path),
+            $payload
+        );
     }
 
-    private function client(Organization $organization): PendingRequest
+    private function request(Organization $organization, string $method, string $url, ?array $payload = null): array
     {
+        if (!function_exists('curl_init')) {
+            throw new RuntimeException('На сервере PHP не включено расширение cURL.');
+        }
+
         $settings = $organization->settings ?: [];
         $encrypted = (string)($settings['external_crm_token'] ?? '');
 
@@ -112,10 +118,49 @@ class ExternalCrmService
             throw new RuntimeException('Не удалось расшифровать API-токен внешней CRM.');
         }
 
-        return Http::acceptJson()
-            ->withToken($token)
-            ->connectTimeout(5)
-            ->timeout(15);
+        $headers = [
+            'Accept: application/json',
+            'Authorization: Bearer '.$token,
+        ];
+
+        $ch = curl_init($url);
+        if ($ch === false) {
+            throw new RuntimeException('Не удалось инициализировать cURL.');
+        }
+
+        $options = [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_CUSTOMREQUEST => strtoupper($method),
+        ];
+
+        if ($payload !== null) {
+            $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($json === false) {
+                throw new RuntimeException('Не удалось сформировать JSON для внешней CRM.');
+            }
+            $options[CURLOPT_POSTFIELDS] = $json;
+            $options[CURLOPT_HTTPHEADER][] = 'Content-Type: application/json';
+        }
+
+        curl_setopt_array($ch, $options);
+        $body = curl_exec($ch);
+
+        if ($body === false) {
+            $error = curl_error($ch);
+            curl_close($ch);
+            throw new RuntimeException('Ошибка соединения с внешней CRM: '.$error);
+        }
+
+        $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        curl_close($ch);
+
+        $json = json_decode($body, true);
+
+        return $this->response($status, is_array($json) ? $json : null, (string)$body);
     }
 
     private function url(Organization $organization, string $path): string
