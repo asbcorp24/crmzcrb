@@ -5,6 +5,7 @@
   let options = null;
   let currentTaskId = null;
   let pendingCreateMeta = null;
+  let pendingCreateExternal = false;
   let batchTimer = null;
 
   const esc = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[ch]));
@@ -199,6 +200,7 @@
           <div class="col-md-4"><label class="form-label">Заказчик</label><select name="customer_id" id="createCustomerId" class="form-select" disabled><option value="">Сначала выберите тип</option></select></div>
           <div class="col-md-4"><label class="form-label">Статус</label><select name="business_status_id" class="form-select">${makeOptions(options.statuses, 'Пусто')}</select></div>
           <div class="col-12"><div class="form-check mt-1"><input class="form-check-input" type="checkbox" name="add_to_plan" value="1" id="createAddToPlan"><label class="form-check-label fw-semibold" for="createAddToPlan">Добавить в план сотрудника на текущий месяц</label><div class="form-text">Если у выбранного сотрудника есть активный или черновой месячный план, задача будет автоматически добавлена в него.</div></div></div>
+          ${options.external_crm_enabled ? '<div class="col-12"><div class="form-check mt-1"><input class="form-check-input" type="checkbox" name="send_to_external_crm" value="1" id="createSendExternalCrm"><label class="form-check-label fw-semibold" for="createSendExternalCrm">Отправить во внешнюю CRM</label><div class="form-text">Задача будет отправлена начальнику удалённого цеха, сопоставленного с ответственным отделом.</div></div></div>' : ''}
         </div>
       </div>`;
     description.parentNode.insertBefore(block, description);
@@ -238,6 +240,7 @@
         customer_id: fd.get('customer_id') || null,
         business_status_id: fd.get('business_status_id') || null,
       };
+      pendingCreateExternal = !!fd.get('send_to_external_crm');
     }, true);
   }
 
@@ -260,6 +263,7 @@
         <div class="col-md-6"><label class="form-label small">Тип заказчика</label><select id="taskCustomerType" class="form-select"><option value="">Не выбран</option><option value="organization">Предприятие</option><option value="department">Отдел</option></select></div>
         <div class="col-md-6"><label class="form-label small">Заказчик</label><select id="taskCustomerId" class="form-select"></select></div>
         <div class="col-12"><button id="saveTaskBusiness" type="button" class="btn btn-sm btn-outline-primary"><i class="bi bi-check2 me-1"></i>Сохранить реквизиты</button></div>
+        ${options?.external_crm_enabled ? '<div class="col-12"><div class="border rounded p-3 mt-1"><div class="d-flex align-items-center gap-2 flex-wrap"><div><b><i class="bi bi-arrow-left-right me-1"></i>Внешняя CRM</b><div id="taskExternalCrmState" class="small text-muted mt-1">Не синхронизировано</div></div><button id="syncTaskExternalCrm" type="button" class="btn btn-sm btn-outline-primary ms-auto"><i class="bi bi-cloud-arrow-up me-1"></i>Синхронизировать</button></div></div></div>' : ''}
       </div></div>`;
     description.insertAdjacentElement('afterend', block);
     addReferenceButton(document.getElementById('taskProject'), 'project', 'Проект');
@@ -270,6 +274,7 @@
       toggleCustomerReferenceButton(document.getElementById('taskCustomerId'), e.target.value === 'organization');
     });
     document.getElementById('saveTaskBusiness')?.addEventListener('click', saveTaskDetails);
+    document.getElementById('syncTaskExternalCrm')?.addEventListener('click', syncExternalTask);
   }
 
   function injectLinksBlock() {
@@ -317,6 +322,9 @@
     toggleCustomerReferenceButton(document.getElementById('taskCustomerId'), (d.customer_type || '') === 'organization');
     const canManage = !!d.can_manage;
     document.querySelectorAll('#taskBusinessBlock input,#taskBusinessBlock select,#saveTaskBusiness').forEach(el => el.disabled = !canManage);
+    const syncBtn = document.getElementById('syncTaskExternalCrm');
+    if (syncBtn) syncBtn.disabled = !canManage;
+    renderExternalCrmState(d);
     renderLinks(d.links || []);
   }
 
@@ -341,6 +349,41 @@
       setTimeout(() => state.textContent = '', 1500);
       scheduleBatchBadges();
     } catch (e) { state.textContent = ''; alert(e.message); }
+  }
+
+  function renderExternalCrmState(d) {
+    const state = document.getElementById('taskExternalCrmState');
+    const btn = document.getElementById('syncTaskExternalCrm');
+    if (!state) return;
+    if (d?.external_crm_task_id) {
+      const when = d.external_crm_synced_at ? new Date(d.external_crm_synced_at).toLocaleString('ru-RU') : '';
+      state.innerHTML = '<span class="text-success">✓ Связано с внешней задачей #' + esc(d.external_crm_task_id) + '</span>' + (when ? ' · ' + esc(when) : '');
+      if (btn) btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Обновить во внешней CRM';
+    } else if (d?.external_crm_sync_status === 'error') {
+      state.innerHTML = '<span class="text-danger">Ошибка: ' + esc(d.external_crm_sync_error || 'синхронизация не выполнена') + '</span>';
+      if (btn) btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-1"></i>Повторить отправку';
+    } else {
+      state.textContent = 'Ещё не отправлено во внешнюю CRM.';
+      if (btn) btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-1"></i>Отправить во внешнюю CRM';
+    }
+  }
+
+  async function syncExternalTask() {
+    if (!currentTaskId) return;
+    const btn = document.getElementById('syncTaskExternalCrm');
+    const state = document.getElementById('taskExternalCrmState');
+    if (btn) btn.disabled = true;
+    if (state) state.textContent = 'Синхронизация...';
+    try {
+      const r = await json(`/ajax/external-crm/tasks/${currentTaskId}/sync`, {method:'POST'});
+      const d = await json(`/ajax/tasks/${currentTaskId}/details`);
+      renderExternalCrmState(d);
+      if (state && r.manager?.name) state.innerHTML += ' · Получатель: ' + esc(r.manager.name);
+    } catch (e) {
+      if (state) state.innerHTML = '<span class="text-danger">' + esc(e.message) + '</span>';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   function renderLinks(rows) {
@@ -445,9 +488,21 @@
         setTimeout(() => alert(data.plan_message), 50);
       }
       const meta = pendingCreateMeta;
+      const sendExternal = pendingCreateExternal;
       pendingCreateMeta = null;
+      pendingCreateExternal = false;
       json(`/ajax/tasks/${id}/details`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(meta)})
-        .then(scheduleBatchBadges).catch(e => console.error(e));
+        .then(async () => {
+          scheduleBatchBadges();
+          if (!sendExternal) return;
+          try {
+            const synced = await json(`/ajax/external-crm/tasks/${id}/sync`, {method:'POST'});
+            const who = synced.manager?.name ? ' Получатель: ' + synced.manager.name + '.' : '';
+            alert('Задача отправлена во внешнюю CRM #' + synced.external_task_id + '.' + who);
+          } catch (e) {
+            alert('Задача создана, но не отправлена во внешнюю CRM: ' + e.message);
+          }
+        }).catch(e => console.error(e));
     });
   }
 
