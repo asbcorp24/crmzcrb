@@ -202,6 +202,41 @@ class ExternalCrmController extends Controller
         return redirect()->route('external-crm.page')->with('success', 'Сопоставление отделов с удалёнными цехами сохранено.');
     }
 
+    public function plansReport(Request $request, ExternalCrmService $crm)
+    {
+        $user = $request->user();
+        abort_unless($user->isAdmin() || $user->isManager(), 403);
+
+        $data = $request->validate([
+            'month' => ['required','regex:/^\\d{4}-\\d{2}$/'],
+            'details' => 'nullable|boolean',
+        ]);
+
+        $organization = Organization::findOrFail($user->organization_id);
+        if (!$crm->configured($organization)) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Подключение к внешней CRM не настроено.',
+            ], 422);
+        }
+
+        try {
+            $remote = !empty($data['details'])
+                ? $crm->plansReport($organization, $data['month'])
+                : $crm->plansAnalytics($organization, $data['month']);
+
+            return response()->json([
+                'ok' => true,
+                'data' => isset($remote['data']) && is_array($remote['data']) ? $remote['data'] : [],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
     public function syncTask(Request $request, Task $task, ExternalCrmService $crm)
     {
         $this->authorizeTaskSync($request, $task);
