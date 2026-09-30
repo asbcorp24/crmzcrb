@@ -62,7 +62,7 @@
                 <thead><tr><th>Наш отдел</th><th>Удалённый цех</th><th>Начальник</th><th>Тип задачи</th><th>Состояние</th></tr></thead>
                 <tbody>
                 @forelse($departments as $department)
-                  @php($mapping=$mappings->get($department->id))
+                  @php $mapping = $mappings->get($department->id); @endphp
                   <tr>
                     <td><b>{{ $department->name }}</b>@if($department->short_name)<div class="small text-muted">{{ $department->short_name }}</div>@endif</td>
                     <td style="min-width:260px">
