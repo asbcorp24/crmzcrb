@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Department;
 use App\Models\ReferenceItem;
+use App\Models\Organization;
 use App\Models\Task;
 use App\Models\TaskEvent;
 use App\Models\TaskLink;
@@ -20,6 +21,9 @@ class TaskDetailsController extends Controller
         $user = $request->user();
         $departmentIds = app(AccessService::class)->departmentIds($user);
 
+        $organization = Organization::find($user->organization_id);
+        $settings = $organization?->settings ?: [];
+
         return response()->json([
             'projects' => $this->refs('project', $user->organization_id),
             'bases' => $this->refs('basis', $user->organization_id),
@@ -28,6 +32,7 @@ class TaskDetailsController extends Controller
             'departments' => Department::whereIn('id', $departmentIds)->where('is_active', true)
                 ->orderBy('name')->get(['id','name','short_name']),
             'can_create_reference' => $user->isManager(),
+            'external_crm_enabled' => !empty($settings['external_crm_url']) && !empty($settings['external_crm_token']),
         ]);
     }
 
@@ -224,6 +229,10 @@ class TaskDetailsController extends Controller
             'customer_type'=>$task->customer_type,
             'customer_id'=>$task->customer_id,
             'business_status_id'=>$task->business_status_id,
+            'external_crm_task_id'=>$task->external_crm_task_id,
+            'external_crm_sync_status'=>$task->external_crm_sync_status,
+            'external_crm_sync_error'=>$task->external_crm_sync_error,
+            'external_crm_synced_at'=>$task->external_crm_synced_at,
             'can_manage'=>$this->canManage($request, $task),
             'links'=>TaskLink::with('creator:id,last_name,first_name,middle_name')->where('task_id',$task->id)->latest()->get(),
         ], $compact);
