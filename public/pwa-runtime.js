@@ -92,6 +92,28 @@
     }
   }
 
+
+  function addExternalCrmMenu() {
+    if (!document.querySelector('a[href="/settings"]')) return;
+    if (document.querySelector('a[href="/external-crm"]')) return;
+    const systemSection = [...document.querySelectorAll('.sidebar-section')].find(x => x.textContent.trim() === 'Система');
+    if (systemSection) {
+      const a = document.createElement('a');
+      a.className = 'nav-link rounded' + (location.pathname.startsWith('/external-crm') ? ' active' : '');
+      a.href = '/external-crm';
+      a.innerHTML = '<i class="bi bi-arrow-left-right me-2"></i>Внешняя CRM';
+      systemSection.parentNode.insertBefore(a, systemSection.nextSibling);
+    }
+    const mobileSystem = [...document.querySelectorAll('.mobile-section-title')].find(x => x.textContent.trim() === 'Система');
+    if (mobileSystem) {
+      const a = document.createElement('a');
+      a.className = 'mobile-menu-link' + (location.pathname.startsWith('/external-crm') ? ' active' : '');
+      a.href = '/external-crm';
+      a.innerHTML = '<i class="bi bi-arrow-left-right"></i><span>Внешняя CRM</span>';
+      mobileSystem.parentNode.insertBefore(a, mobileSystem.nextSibling);
+    }
+  }
+
   function enhanceProductionMeetings() {
     if (!location.pathname.startsWith('/production-meetings')) return;
     const apply = () => {
@@ -220,6 +242,7 @@
     addUserSettingsMenu();
     addProductionMeetingsMenu();
     addDirectoriesMenu();
+    addExternalCrmMenu();
     addAnalyticsMenu();
     enhanceProductionMeetings();
     openTaskFromQuery();
