@@ -13,8 +13,8 @@ class Task extends Model
 {
     use BelongsToOrganization;
 
-    protected $fillable = ['organization_id','plan_id','parent_task_id','created_by','assigned_to','title','description','priority','status','progress','started_at','start_at','due_at','completed_at','archived_at','archived_by','result','project_id','basis_id','responsible_department_id','customer_type','customer_id','business_status_id','external_crm_task_id','external_crm_sync_status','external_crm_sync_error','external_crm_synced_at'];
-    protected $casts = ['started_at'=>'datetime','start_at'=>'datetime','due_at'=>'datetime','completed_at'=>'datetime','archived_at'=>'datetime','external_crm_task_id'=>'integer','external_crm_synced_at'=>'datetime'];
+    protected $fillable = ['organization_id','plan_id','parent_task_id','created_by','assigned_to','title','description','priority','status','progress','started_at','start_at','due_at','completed_at','archived_at','archived_by','result','project_id','basis_id','responsible_department_id','customer_type','customer_id','business_status_id','external_crm_task_id','external_crm_sync_status','external_crm_remote_status','external_crm_sync_error','external_crm_synced_at','external_crm_pulled_at'];
+    protected $casts = ['started_at'=>'datetime','start_at'=>'datetime','due_at'=>'datetime','completed_at'=>'datetime','archived_at'=>'datetime','external_crm_task_id'=>'integer','external_crm_synced_at'=>'datetime','external_crm_pulled_at'=>'datetime'];
     protected $appends = ['is_overdue','is_blocked'];
 
     protected static function booted(): void
