@@ -231,8 +231,10 @@ class TaskDetailsController extends Controller
             'business_status_id'=>$task->business_status_id,
             'external_crm_task_id'=>$task->external_crm_task_id,
             'external_crm_sync_status'=>$task->external_crm_sync_status,
+            'external_crm_remote_status'=>$task->external_crm_remote_status,
             'external_crm_sync_error'=>$task->external_crm_sync_error,
             'external_crm_synced_at'=>$task->external_crm_synced_at,
+            'external_crm_pulled_at'=>$task->external_crm_pulled_at,
             'can_manage'=>$this->canManage($request, $task),
             'links'=>TaskLink::with('creator:id,last_name,first_name,middle_name')->where('task_id',$task->id)->latest()->get(),
         ], $compact);
