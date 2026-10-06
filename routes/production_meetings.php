@@ -8,10 +8,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/production-meetings/{productionMeeting}/print', [ProductionMeetingController::class, 'print'])->name('production-meetings.print');
 
     Route::get('/ajax/production-meetings', [ProductionMeetingController::class, 'index'])->name('production-meetings.index');
+    Route::get('/ajax/production-meetings-task-options', [ProductionMeetingController::class, 'taskOptions'])->name('production-meetings.task-options');
     Route::post('/ajax/production-meetings', [ProductionMeetingController::class, 'store'])->name('production-meetings.store');
     Route::get('/ajax/production-meetings/{productionMeeting}', [ProductionMeetingController::class, 'show'])->name('production-meetings.show');
     Route::patch('/ajax/production-meetings/{productionMeeting}', [ProductionMeetingController::class, 'update'])->name('production-meetings.update');
     Route::post('/ajax/production-meetings/{productionMeeting}/items', [ProductionMeetingController::class, 'storeItem'])->name('production-meetings.items.store');
+    Route::post('/ajax/production-meetings/{productionMeeting}/items/attach-task', [ProductionMeetingController::class, 'attachExistingTask'])->name('production-meetings.items.attach-task');
     Route::patch('/ajax/production-meetings/{productionMeeting}/items/{item}', [ProductionMeetingController::class, 'updateItem'])->name('production-meetings.items.update');
     Route::delete('/ajax/production-meetings/{productionMeeting}/items/{item}', [ProductionMeetingController::class, 'destroyItem'])->name('production-meetings.items.destroy');
     Route::post('/ajax/production-meetings/{productionMeeting}/generate-protocol', [ProductionMeetingController::class, 'generateProtocol'])->name('production-meetings.generate-protocol');
