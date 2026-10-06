@@ -73,6 +73,131 @@ class ProductionMeetingController extends Controller
         return response()->json($this->loadMeeting($productionMeeting));
     }
 
+    public function taskOptions(Request $request)
+    {
+        $this->authorizeManager($request);
+        $access = app(AccessService::class);
+        $userIds = $access->userIds($request->user(), true);
+        $q = Task::with(['assignee:id,department_id,last_name,first_name,middle_name,role','assignee.department:id,name,short_name'])
+            ->whereNull('archived_at')
+            ->where(function ($w) use ($userIds, $request) {
+                $w->whereIn('assigned_to', $userIds)->orWhere('created_by', $request->user()->id);
+            })
+            ->whereNotIn('id', ProductionMeetingItem::whereNotNull('task_id')->pluck('task_id'));
+
+        if ($request->filled('q')) {
+            $term = trim((string)$request->q);
+            $q->where(function ($w) use ($term) {
+                $w->where('title', 'like', '%'.$term.'%');
+                if (ctype_digit($term)) $w->orWhere('id', (int)$term);
+            });
+        }
+
+        $rows = $q->orderByDesc('id')->limit(50)->get();
+
+        return response()->json($rows->map(function (Task $task) {
+            return [
+                'id' => $task->id,
+                'title' => $task->title,
+                'status' => $task->status,
+                'priority' => $task->priority,
+                'start_at' => optional($task->start_at ?: $task->started_at)->toDateString(),
+                'due_at' => optional($task->due_at)->toDateString(),
+                'responsible_department_id' => $task->responsible_department_id ?: $task->assignee?->department_id,
+                'assignee' => $task->assignee ? [
+                    'id' => $task->assignee->id,
+                    'full_name' => $task->assignee->full_name,
+                    'role' => $task->assignee->role,
+                    'department_id' => $task->assignee->department_id,
+                    'department' => $task->assignee->department ? [
+                        'id' => $task->assignee->department->id,
+                        'name' => $task->assignee->department->name,
+                        'short_name' => $task->assignee->department->short_name,
+                    ] : null,
+                ] : null,
+            ];
+        })->values());
+    }
+
+    public function attachExistingTask(Request $request, ProductionMeeting $productionMeeting)
+    {
+        $this->authorizeManager($request);
+        $data = $request->validate(['task_id' => 'required|integer']);
+
+        $access = app(AccessService::class);
+        $userIds = $access->userIds($request->user(), true);
+        $task = Task::with('assignee')->whereKey((int)$data['task_id'])
+            ->whereNull('archived_at')
+            ->where(function ($w) use ($userIds, $request) {
+                $w->whereIn('assigned_to', $userIds)->orWhere('created_by', $request->user()->id);
+            })->firstOrFail();
+
+        abort_if(
+            ProductionMeetingItem::where('task_id', $task->id)->exists(),
+            422,
+            'Эта задача уже добавлена в производственное совещание.'
+        );
+
+        $departmentId = (int)($task->responsible_department_id ?: ($task->assignee?->department_id ?: 0));
+        abort_if(!$departmentId, 422, 'У выбранной задачи невозможно определить ответственное подразделение.');
+        abort_unless($access->departmentIds($request->user())->contains($departmentId), 403);
+
+        $coexecutorId = 0;
+        if ($task->assignee && in_array($task->assignee->role, ['manager','admin'], true)
+            && $userIds->contains((int)$task->assignee->id)) {
+            $coexecutorId = (int)$task->assignee->id;
+        }
+        if (!$coexecutorId) {
+            $coexecutorId = (int)User::whereIn('id', $userIds)
+                ->where('department_id', $departmentId)
+                ->where('is_active', true)
+                ->whereNull('archived_at')
+                ->whereIn('role', ['manager','admin'])
+                ->orderByRaw("CASE WHEN role = 'manager' THEN 0 ELSE 1 END")
+                ->value('id');
+        }
+        abort_if(!$coexecutorId, 422, 'Для подразделения выбранной задачи не найден доступный руководитель.');
+
+        $status = [
+            'new' => 'pending',
+            'in_progress' => 'in_progress',
+            'review' => 'in_progress',
+            'completed' => 'completed',
+            'cancelled' => 'cancelled',
+        ][$task->status] ?? 'pending';
+
+        $itemData = [
+            'production_meeting_id' => $productionMeeting->id,
+            'number' => ((int)$productionMeeting->items()->max('number')) + 1,
+            'instruction' => $task->title,
+            'responsible_department_id' => $departmentId,
+            'coexecutor_id' => $coexecutorId,
+            'start_at' => $task->start_at ? $task->start_at->toDateString() : ($task->started_at ? $task->started_at->toDateString() : null),
+            'due_at' => $task->due_at ? $task->due_at->toDateString() : null,
+            'status' => $status,
+            'task_id' => $task->id,
+            'task_created_from_meeting' => false,
+            'created_by' => $request->user()->id,
+        ];
+        $this->fillDuration($itemData);
+
+        $item = ProductionMeetingItem::create($itemData);
+
+        TaskEvent::create([
+            'task_id' => $task->id,
+            'user_id' => $request->user()->id,
+            'type' => 'production_meeting_linked',
+            'from_status' => $task->status,
+            'to_status' => $task->status,
+            'message' => 'Задача добавлена в производственное совещание «'.$productionMeeting->title.'»',
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'item' => $item->fresh()->load(['department','coexecutor','task']),
+        ], 201);
+    }
+
     public function update(Request $request, ProductionMeeting $productionMeeting)
     {
         $this->authorizeManager($request);
@@ -120,7 +245,7 @@ class ProductionMeetingController extends Controller
         abort_unless((int)$item->production_meeting_id === (int)$productionMeeting->id, 404);
 
         DB::transaction(function () use ($request, $item) {
-            if ($item->task_id) {
+            if ($item->task_id && $item->task_created_from_meeting) {
                 $task = Task::find($item->task_id);
                 if ($task && !in_array($task->status, ['completed','cancelled'], true)) {
                     $from = $task->status;
@@ -248,7 +373,7 @@ class ProductionMeetingController extends Controller
                 'task_id'=>$task->id,'user_id'=>$request->user()->id,'type'=>'created',
                 'to_status'=>$task->status,'message'=>'Создано из протокола производственного совещания №'.($meeting->protocol_number ?: $meeting->id),
             ]);
-            $item->update(['task_id'=>$task->id]);
+            $item->update(['task_id'=>$task->id, 'task_created_from_meeting'=>true]);
             if ((int)$item->coexecutor_id !== (int)$request->user()->id) {
                 CrmNotification::create([
                     'user_id'=>$item->coexecutor_id,'task_id'=>$task->id,'type'=>'task_assigned',
@@ -256,6 +381,10 @@ class ProductionMeetingController extends Controller
                     'url'=>route('tasks.page',['task'=>$task->id],false),
                 ]);
             }
+            return;
+        }
+
+        if (!$item->task_created_from_meeting) {
             return;
         }
 
@@ -292,7 +421,7 @@ class ProductionMeetingController extends Controller
             'creator:id,last_name,first_name,middle_name',
             'items.department:id,name,short_name',
             'items.coexecutor:id,department_id,last_name,first_name,middle_name,position',
-            'items.task:id,status,progress,due_at',
+            'items.task:id,title,status,progress,due_at',
         ]);
     }
 
