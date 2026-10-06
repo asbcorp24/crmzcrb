@@ -266,6 +266,7 @@
         ${options?.external_crm_enabled ? `<div class="col-12"><div class="border rounded p-3 mt-1">
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <div class="flex-grow-1"><b><i class="bi bi-arrow-left-right me-1"></i>Внешняя CRM</b><div id="taskExternalCrmState" class="small text-muted mt-1">Не синхронизировано</div></div>
+            <button id="pullTaskExternalCrm" type="button" class="btn btn-sm btn-outline-success d-none"><i class="bi bi-arrow-down-circle me-1"></i>Получить изменения</button>
             <button id="loadTaskExternalCrm" type="button" class="btn btn-sm btn-outline-secondary d-none"><i class="bi bi-download me-1"></i>Получить данные</button>
             <button id="syncTaskExternalCrm" type="button" class="btn btn-sm btn-outline-primary"><i class="bi bi-cloud-arrow-up me-1"></i>Синхронизировать</button>
           </div>
@@ -283,6 +284,7 @@
     document.getElementById('saveTaskBusiness')?.addEventListener('click', saveTaskDetails);
     document.getElementById('syncTaskExternalCrm')?.addEventListener('click', syncExternalTask);
     document.getElementById('loadTaskExternalCrm')?.addEventListener('click', loadExternalTaskDetails);
+    document.getElementById('pullTaskExternalCrm')?.addEventListener('click', () => pullExternalTask(false));
   }
 
   function injectLinksBlock() {
@@ -334,6 +336,9 @@
     if (syncBtn) syncBtn.disabled = !canManage;
     renderExternalCrmState(d);
     renderLinks(d.links || []);
+    if (d.external_crm_task_id) {
+      pullExternalTask(true);
+    }
   }
 
   async function saveTaskDetails() {
@@ -364,17 +369,24 @@
     const btn = document.getElementById('syncTaskExternalCrm');
     if (!state) return;
     const loadBtn = document.getElementById('loadTaskExternalCrm');
+    const pullBtn = document.getElementById('pullTaskExternalCrm');
     if (d?.external_crm_task_id) {
       const when = d.external_crm_synced_at ? new Date(d.external_crm_synced_at).toLocaleString('ru-RU') : '';
       state.innerHTML = '<span class="text-success">✓ Связано с внешней задачей #' + esc(d.external_crm_task_id) + '</span>' + (when ? ' · ' + esc(when) : '');
       if (btn) btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Обновить во внешней CRM';
       if (loadBtn) loadBtn.classList.remove('d-none');
+      if (pullBtn) pullBtn.classList.remove('d-none');
+      if (d.external_crm_pulled_at) {
+        state.innerHTML += ' · Получено: ' + esc(new Date(d.external_crm_pulled_at).toLocaleString('ru-RU'));
+      }
     } else if (d?.external_crm_sync_status === 'error') {
       if (loadBtn) loadBtn.classList.add('d-none');
+      if (pullBtn) pullBtn.classList.add('d-none');
       state.innerHTML = '<span class="text-danger">Ошибка: ' + esc(d.external_crm_sync_error || 'синхронизация не выполнена') + '</span>';
       if (btn) btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-1"></i>Повторить отправку';
     } else {
       if (loadBtn) loadBtn.classList.add('d-none');
+      if (pullBtn) pullBtn.classList.add('d-none');
       state.textContent = 'Ещё не отправлено во внешнюю CRM.';
       if (btn) btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-1"></i>Отправить во внешнюю CRM';
     }
@@ -476,6 +488,45 @@
       </div>`;
     box.classList.remove('d-none');
     document.getElementById('externalTaskLogAdd')?.addEventListener('click', addExternalTaskLog);
+  }
+
+  async function pullExternalTask(silent=true) {
+    if (!currentTaskId) return;
+    const btn = document.getElementById('pullTaskExternalCrm');
+    const state = document.getElementById('taskExternalCrmState');
+    if (btn) btn.disabled = true;
+    try {
+      const r = await json(`/ajax/external-crm/tasks/${currentTaskId}/pull`, {method:'POST'});
+      if (!silent) {
+        const message = (r.changes && r.changes.length)
+          ? 'Получено из внешней CRM: ' + r.changes.join('; ')
+          : 'Внешняя CRM проверена. Изменений нет.';
+        alert(message);
+      }
+      const d = await json(`/ajax/tasks/${currentTaskId}/details`);
+      renderExternalCrmState(d);
+
+      if (typeof window.openTask === 'function' && window.openTask.__businessWrapped) {
+        const modal = document.getElementById('taskDetailModal');
+        if (modal?.classList.contains('show')) {
+          const statusNode = document.getElementById('detailStatus');
+          const dueNode = document.getElementById('detailDueAt');
+          const resultNode = document.getElementById('detailResult');
+          if (statusNode && r.task?.status) statusNode.textContent = statusName?.(r.task.status) || r.task.status;
+          if (dueNode && r.task?.due_at) dueNode.textContent = new Date(r.task.due_at).toLocaleString('ru-RU');
+          if (resultNode && r.task?.result != null) resultNode.textContent = r.task.result || '—';
+        }
+      }
+
+      scheduleBatchBadges();
+      return r;
+    } catch (e) {
+      if (!silent) alert(e.message);
+      else console.warn('External CRM pull:', e.message);
+      if (state && !silent) state.innerHTML += ' · <span class="text-danger">'+esc(e.message)+'</span>';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   async function loadExternalTaskDetails() {
