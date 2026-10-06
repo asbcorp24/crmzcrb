@@ -213,6 +213,12 @@ class TaskDetailsController extends Controller
             'business_status' => $this->refPayload($task->business_status_id),
             'customer' => $this->customerPayload($task),
             'start_at' => $task->start_at,
+            'external_crm_task_id' => $task->external_crm_task_id,
+            'external_crm_remote_status' => $task->external_crm_remote_status,
+            'external_crm_recipient_name' => $task->external_crm_recipient_name,
+            'external_crm_last_log' => $task->external_crm_last_log,
+            'external_crm_last_log_at' => $task->external_crm_last_log_at,
+            'external_crm_pulled_at' => $task->external_crm_pulled_at,
         ];
     }
 
