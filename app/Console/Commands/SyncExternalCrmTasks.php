@@ -82,8 +82,17 @@ class SyncExternalCrmTasks extends Command
         $remoteStatus = (string)($data['status'] ?? '');
         $localStatus = $this->localStatus($remoteStatus, $task->status);
 
+        $logs = isset($data['logs']) && is_array($data['logs']) ? $data['logs'] : [];
+        usort($logs, function ($a, $b) {
+            return strcmp((string)($a['entry_date'] ?? ''), (string)($b['entry_date'] ?? ''));
+        });
+        $lastLog = $logs ? end($logs) : null;
+
         $update = [
             'external_crm_remote_status' => $remoteStatus ?: null,
+            'external_crm_recipient_name' => $data['owner']['full_name'] ?? $task->external_crm_recipient_name,
+            'external_crm_last_log' => is_array($lastLog) ? ($lastLog['text'] ?? $task->external_crm_last_log) : $task->external_crm_last_log,
+            'external_crm_last_log_at' => is_array($lastLog) && !empty($lastLog['entry_date']) ? Carbon::parse($lastLog['entry_date']) : $task->external_crm_last_log_at,
             'external_crm_pulled_at' => now(),
             'external_crm_sync_error' => null,
             'updated_at' => now(),
