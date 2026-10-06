@@ -425,8 +425,9 @@
       <div class="small">${esc(x.details || '')}</div><div class="small text-muted">${esc(x.author?.full_name || 'Система')}</div></div>`).join('') : '<div class="text-muted small">История отсутствует.</div>';
 
     const documentsHtml = documents.length ? documents.map(x => `
-      <div class="border rounded p-2 mb-2"><div class="fw-semibold"><i class="bi bi-file-earmark me-1"></i>${esc(x.filename || ('Документ #' + x.id))}</div>
+      <div class="border rounded p-2 mb-2"><div class="d-flex align-items-center gap-2"><div class="fw-semibold flex-grow-1"><i class="bi bi-file-earmark me-1"></i>${esc(x.filename || ('Документ #' + x.id))}</div><a class="btn btn-sm btn-outline-secondary" href="/ajax/external-crm/tasks/${currentTaskId}/documents/${x.id}/download"><i class="bi bi-download"></i></a></div>
       <div class="small text-muted">Загружен: ${externalDate(x.uploaded_at)} · OCR: ${esc(x.ocr_status || '—')}</div>
+      ${x.ocr_error ? '<div class="small text-danger mt-1">'+esc(x.ocr_error)+'</div>' : ''}
       ${x.recognized_text ? '<details class="mt-1"><summary class="small">Распознанный текст</summary><div class="small mt-2 text-break" style="white-space:pre-wrap">'+esc(x.recognized_text)+'</div></details>' : ''}</div>`).join('') : '<div class="text-muted small">Документов нет.</div>';
 
     const extrasHtml = extras.length ? extras.map(x => `<div class="d-flex justify-content-between gap-3 border-bottom py-1"><span>${esc(x.rusname || x.name || 'Поле')}</span><b class="text-end">${esc(x.value ?? '—')}</b></div>`).join('') : '<div class="text-muted small">Дополнительных значений нет.</div>';
@@ -452,6 +453,14 @@
               <div class="col-md-3"><b>Окончание:</b> ${externalDate(d.end_date)}</div>
               <div class="col-md-3"><b>Сложность:</b> ${esc(d.complexity_level ?? '—')}</div>
               <div class="col-md-3"><b>Комментарий статуса:</b> ${esc(d.status_comment || '—')}</div>
+              <div class="col-md-6"><b>Автор:</b> ${esc(d.created_by?.full_name || '—')}</div>
+              <div class="col-md-6"><b>Утвердил:</b> ${esc(d.approved_by?.full_name || '—')} ${d.approved_at ? '· '+externalDate(d.approved_at) : ''}</div>
+              <div class="col-md-6"><b>Исходный документ:</b> ${d.source_document ? '№'+esc(d.source_document.number || d.source_document.id)+' — '+esc(d.source_document.subject || '') : '—'}</div>
+              <div class="col-md-6"><b>Служебная записка закрытия:</b> ${d.completion_memo ? '№'+esc(d.completion_memo.number || d.completion_memo.id)+' — '+esc(d.completion_memo.subject || '') : '—'}</div>
+              <div class="col-md-6"><b>Перенесено до:</b> ${externalDate(d.postponed_to)}</div>
+              <div class="col-md-6"><b>Архив:</b> ${d.archived_at ? externalDate(d.archived_at) : 'Нет'}</div>
+              <div class="col-12"><b>Решение:</b> ${esc(d.decision || '—')}</div>
+              <div class="col-12"><b>Комментарий утверждения:</b> ${esc(d.approve_comment || '—')}</div>
               <div class="col-12"><b>Описание:</b><div class="mt-1" style="white-space:pre-wrap">${esc(d.description || '—')}</div></div>
             </div>
           </div>
