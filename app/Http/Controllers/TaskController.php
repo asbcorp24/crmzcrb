@@ -5,13 +5,16 @@ namespace App\Http\Controllers;
 use App\Models\CrmNotification;
 use App\Models\Task;
 use App\Models\Plan;
+use App\Models\Organization;
 use App\Models\TaskChecklistItem;
 use App\Models\TaskComment;
 use App\Models\TaskDeadlineChange;
 use App\Models\TaskEvent;
 use App\Models\User;
 use App\Services\AccessService;
+use App\Services\ExternalCrmService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class TaskController extends Controller
@@ -43,7 +46,25 @@ class TaskController extends Controller
         if ($request->filled('tag_id')) $q->whereHas('tags',fn($t)=>$t->where('task_tags.id',$request->integer('tag_id')));
         if ($request->filled('q')) $q->where(function($w) use ($request){ $w->where('title','like','%'.$request->q.'%')->orWhere('description','like','%'.$request->q.'%'); });
         if ($request->boolean('overdue')) $q->whereNotIn('status',['completed','cancelled'])->where('due_at','<',now());
-        return response()->json($q->orderByRaw("CASE WHEN due_at IS NULL THEN 1 ELSE 0 END")->orderBy('due_at')->latest('id')->paginate(30));
+
+        $page = $q->orderByRaw("CASE WHEN due_at IS NULL THEN 1 ELSE 0 END")
+            ->orderBy('due_at')
+            ->latest('id')
+            ->paginate(30);
+
+        $this->refreshExternalSummariesForPage($request, $page->getCollection());
+
+        // Перечитываем изменённые поля без повторного запроса всей страницы.
+        $idsOnPage = $page->getCollection()->pluck('id')->all();
+        if ($idsOnPage) {
+            $fresh = Task::with(['assignee.department','creator','plan','tags','blockers:id,title,status'])
+                ->whereIn('id', $idsOnPage)
+                ->get()
+                ->keyBy('id');
+            $page->setCollection($page->getCollection()->map(fn ($task) => $fresh->get($task->id) ?: $task));
+        }
+
+        return response()->json($page);
     }
 
     public function show(Request $request, Task $task)
@@ -231,6 +252,116 @@ class TaskController extends Controller
         TaskComment::create(['task_id'=>$task->id,'user_id'=>$request->user()->id,'body'=>'Возврат на доработку: '.$data['message']]);
         $this->event($task, $request->user()->id, 'rejected', 'review', 'in_progress', $data['message']); $this->notify($task->assigned_to, $task, 'task_rejected', 'Задача возвращена на доработку', $data['message']);
         return response()->json(['ok'=>true,'task'=>$task->fresh()]);
+    }
+
+    private function refreshExternalSummariesForPage(Request $request, $tasks): void
+    {
+        $linked = collect($tasks)
+            ->filter(fn ($task) => !empty($task->external_crm_task_id));
+
+        if ($linked->isEmpty()) {
+            return;
+        }
+
+        $organization = Organization::find($request->user()->organization_id);
+        if (!$organization) {
+            return;
+        }
+
+        $crm = app(ExternalCrmService::class);
+        if (!$crm->configured($organization)) {
+            return;
+        }
+
+        try {
+            $summaries = collect($crm->taskSummaries(
+                $organization,
+                $linked->pluck('external_crm_task_id')->all()
+            ))->keyBy(fn ($row) => (int)($row['id'] ?? 0));
+
+            foreach ($linked as $task) {
+                $row = $summaries->get((int)$task->external_crm_task_id);
+                if (!$row) {
+                    continue;
+                }
+
+                $latestLog = isset($row['latest_log']) && is_array($row['latest_log'])
+                    ? $row['latest_log']
+                    : null;
+
+                $remoteStatus = (string)($row['status'] ?? '');
+                $update = [
+                    'external_crm_remote_status' => $remoteStatus ?: null,
+                    'external_crm_recipient_name' => $row['owner']['full_name'] ?? $task->external_crm_recipient_name,
+                    'external_crm_pulled_at' => now(),
+                    'external_crm_sync_error' => null,
+                    'updated_at' => now(),
+                ];
+
+                if ($latestLog) {
+                    $update['external_crm_last_log'] = $latestLog['text'] ?? null;
+                    $update['external_crm_last_log_at'] = !empty($latestLog['entry_date'])
+                        ? \Carbon\Carbon::parse($latestLog['entry_date'])
+                        : null;
+                }
+
+                // Для списка сразу подтягиваем и фактическое состояние исполнения.
+                $localStatus = [
+                    'in_progress' => $task->status === 'review' ? 'review' : 'in_progress',
+                    'done' => 'completed',
+                    'not_done' => 'in_progress',
+                    'postponed' => 'in_progress',
+                    'cancelled' => 'cancelled',
+                ][$remoteStatus] ?? $task->status;
+
+                if ($localStatus !== $task->status) {
+                    $update['status'] = $localStatus;
+                    if ($localStatus === 'completed') {
+                        $update['progress'] = 100;
+                        $update['completed_at'] = $task->completed_at ?: now();
+                        $update['started_at'] = $task->started_at ?: now();
+                    } elseif ($localStatus === 'cancelled') {
+                        $update['completed_at'] = null;
+                    } elseif ($localStatus === 'in_progress') {
+                        $update['completed_at'] = null;
+                        $update['started_at'] = $task->started_at ?: now();
+                        if ((int)$task->progress === 0) {
+                            $update['progress'] = 1;
+                        }
+                    }
+                }
+
+                $remoteDue = ($remoteStatus === 'postponed' && !empty($row['postponed_to']))
+                    ? $row['postponed_to']
+                    : ($row['end_date'] ?? null);
+                if ($remoteDue !== null) {
+                    $update['due_at'] = $remoteDue ? \Carbon\Carbon::parse($remoteDue) : null;
+                }
+
+                $resultParts = [];
+                foreach ([
+                    'decision' => 'Решение',
+                    'status_comment' => 'Комментарий',
+                    'approve_comment' => 'Комментарий утверждения',
+                ] as $key => $label) {
+                    $value = trim((string)($row[$key] ?? ''));
+                    if ($value !== '') {
+                        $resultParts[] = $label.': '.$value;
+                    }
+                }
+                if ($resultParts) {
+                    $update['result'] = implode("\n", array_unique($resultParts));
+                }
+
+                DB::table('tasks')->where('id', $task->id)->update($update);
+            }
+        } catch (\Throwable $e) {
+            foreach ($linked as $task) {
+                DB::table('tasks')->where('id', $task->id)->update([
+                    'external_crm_sync_error' => mb_substr($e->getMessage(), 0, 5000),
+                ]);
+            }
+        }
     }
 
     private function assertCompletable(Task $task): void
