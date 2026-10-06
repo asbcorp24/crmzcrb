@@ -263,7 +263,14 @@
         <div class="col-md-6"><label class="form-label small">Тип заказчика</label><select id="taskCustomerType" class="form-select"><option value="">Не выбран</option><option value="organization">Предприятие</option><option value="department">Отдел</option></select></div>
         <div class="col-md-6"><label class="form-label small">Заказчик</label><select id="taskCustomerId" class="form-select"></select></div>
         <div class="col-12"><button id="saveTaskBusiness" type="button" class="btn btn-sm btn-outline-primary"><i class="bi bi-check2 me-1"></i>Сохранить реквизиты</button></div>
-        ${options?.external_crm_enabled ? '<div class="col-12"><div class="border rounded p-3 mt-1"><div class="d-flex align-items-center gap-2 flex-wrap"><div><b><i class="bi bi-arrow-left-right me-1"></i>Внешняя CRM</b><div id="taskExternalCrmState" class="small text-muted mt-1">Не синхронизировано</div></div><button id="syncTaskExternalCrm" type="button" class="btn btn-sm btn-outline-primary ms-auto"><i class="bi bi-cloud-arrow-up me-1"></i>Синхронизировать</button></div></div></div>' : ''}
+        ${options?.external_crm_enabled ? `<div class="col-12"><div class="border rounded p-3 mt-1">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <div class="flex-grow-1"><b><i class="bi bi-arrow-left-right me-1"></i>Внешняя CRM</b><div id="taskExternalCrmState" class="small text-muted mt-1">Не синхронизировано</div></div>
+            <button id="loadTaskExternalCrm" type="button" class="btn btn-sm btn-outline-secondary d-none"><i class="bi bi-download me-1"></i>Получить данные</button>
+            <button id="syncTaskExternalCrm" type="button" class="btn btn-sm btn-outline-primary"><i class="bi bi-cloud-arrow-up me-1"></i>Синхронизировать</button>
+          </div>
+          <div id="taskExternalCrmDetails" class="mt-3 d-none"></div>
+        </div></div>` : ''}
       </div></div>`;
     description.insertAdjacentElement('afterend', block);
     addReferenceButton(document.getElementById('taskProject'), 'project', 'Проект');
@@ -275,6 +282,7 @@
     });
     document.getElementById('saveTaskBusiness')?.addEventListener('click', saveTaskDetails);
     document.getElementById('syncTaskExternalCrm')?.addEventListener('click', syncExternalTask);
+    document.getElementById('loadTaskExternalCrm')?.addEventListener('click', loadExternalTaskDetails);
   }
 
   function injectLinksBlock() {
@@ -355,14 +363,18 @@
     const state = document.getElementById('taskExternalCrmState');
     const btn = document.getElementById('syncTaskExternalCrm');
     if (!state) return;
+    const loadBtn = document.getElementById('loadTaskExternalCrm');
     if (d?.external_crm_task_id) {
       const when = d.external_crm_synced_at ? new Date(d.external_crm_synced_at).toLocaleString('ru-RU') : '';
       state.innerHTML = '<span class="text-success">✓ Связано с внешней задачей #' + esc(d.external_crm_task_id) + '</span>' + (when ? ' · ' + esc(when) : '');
       if (btn) btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Обновить во внешней CRM';
+      if (loadBtn) loadBtn.classList.remove('d-none');
     } else if (d?.external_crm_sync_status === 'error') {
+      if (loadBtn) loadBtn.classList.add('d-none');
       state.innerHTML = '<span class="text-danger">Ошибка: ' + esc(d.external_crm_sync_error || 'синхронизация не выполнена') + '</span>';
       if (btn) btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-1"></i>Повторить отправку';
     } else {
+      if (loadBtn) loadBtn.classList.add('d-none');
       state.textContent = 'Ещё не отправлено во внешнюю CRM.';
       if (btn) btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-1"></i>Отправить во внешнюю CRM';
     }
@@ -381,6 +393,118 @@
       if (state && r.manager?.name) state.innerHTML += ' · Получатель: ' + esc(r.manager.name);
     } catch (e) {
       if (state) state.innerHTML = '<span class="text-danger">' + esc(e.message) + '</span>';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function externalDate(v) {
+    if (!v) return '—';
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? esc(v) : d.toLocaleString('ru-RU');
+  }
+
+  function renderExternalTaskDetails(d) {
+    const box = document.getElementById('taskExternalCrmDetails');
+    if (!box) return;
+    const logs = d.logs || [];
+    const history = d.history || [];
+    const documents = d.documents || [];
+    const extras = d.extra_values || [];
+    const letters = d.linked_letters || [];
+    const plan = d.plan || null;
+
+    const logsHtml = logs.length ? logs.map(x => `
+      <div class="border-bottom py-2 ${x.parent_id ? 'ms-4' : ''}">
+        <div class="d-flex gap-2"><span class="badge ${x.is_done ? 'text-bg-success' : 'text-bg-secondary'}">${x.is_done ? 'Выполнено' : 'В работе'}</span><span class="small text-muted">${externalDate(x.entry_date)}</span></div>
+        <div class="mt-1">${esc(x.text || '')}</div>
+      </div>`).join('') : '<div class="text-muted small">Журнал пока пуст.</div>';
+
+    const historyHtml = history.length ? history.map(x => `
+      <div class="border-bottom py-2"><div><b>${esc(x.action || 'Изменение')}</b> <span class="small text-muted">${externalDate(x.created_at)}</span></div>
+      <div class="small">${esc(x.details || '')}</div><div class="small text-muted">${esc(x.author?.full_name || 'Система')}</div></div>`).join('') : '<div class="text-muted small">История отсутствует.</div>';
+
+    const documentsHtml = documents.length ? documents.map(x => `
+      <div class="border rounded p-2 mb-2"><div class="fw-semibold"><i class="bi bi-file-earmark me-1"></i>${esc(x.filename || ('Документ #' + x.id))}</div>
+      <div class="small text-muted">Загружен: ${externalDate(x.uploaded_at)} · OCR: ${esc(x.ocr_status || '—')}</div>
+      ${x.recognized_text ? '<details class="mt-1"><summary class="small">Распознанный текст</summary><div class="small mt-2 text-break" style="white-space:pre-wrap">'+esc(x.recognized_text)+'</div></details>' : ''}</div>`).join('') : '<div class="text-muted small">Документов нет.</div>';
+
+    const extrasHtml = extras.length ? extras.map(x => `<div class="d-flex justify-content-between gap-3 border-bottom py-1"><span>${esc(x.rusname || x.name || 'Поле')}</span><b class="text-end">${esc(x.value ?? '—')}</b></div>`).join('') : '<div class="text-muted small">Дополнительных значений нет.</div>';
+
+    const lettersHtml = letters.length ? letters.map(x => `<div class="border-bottom py-2"><b>№${esc(x.number || x.id)}</b> — ${esc(x.subject || '')}<div class="small text-muted">${externalDate(x.date)} · ${esc(x.approval_status || '')}</div></div>`).join('') : '<div class="text-muted small">Связанных писем нет.</div>';
+
+    const planHtml = plan ? `<div><b>${esc(plan.text || ('План #' + plan.id))}</b><div class="small text-muted">${esc(plan.start_date || '')} — ${esc(plan.end_date || '')} · ${esc(plan.approval_status || '')}</div>
+      <div class="mt-2">${(plan.items||[]).map(x=>`<div class="border-bottom py-1"><span class="fw-semibold">${esc(x.text||'')}</span><span class="small text-muted ms-2">${esc(x.planned_hours??0)} ч · ${esc(x.status||'')}</span>${x.justification?'<div class="small">Обоснование: '+esc(x.justification)+'</div>':''}</div>`).join('')}</div></div>` : '<div class="text-muted small">С планом не связана.</div>';
+
+    box.innerHTML = `
+      <div class="row g-3">
+        <div class="col-12">
+          <div class="bg-light rounded p-3">
+            <div class="row g-2 small">
+              <div class="col-md-6"><b>Название:</b> ${esc(d.title || '—')}</div>
+              <div class="col-md-3"><b>Статус:</b> ${esc(d.status_label || d.status || '—')}</div>
+              <div class="col-md-3"><b>Приоритет:</b> ${esc(d.priority ?? '—')}</div>
+              <div class="col-md-6"><b>Тема:</b> ${esc(d.direction || '—')}</div>
+              <div class="col-md-6"><b>Обоснования:</b> ${esc(d.outgoing_document || '—')}</div>
+              <div class="col-md-6"><b>Исполнитель:</b> ${esc(d.owner?.full_name || '—')}</div>
+              <div class="col-md-6"><b>Отдел:</b> ${esc(d.assigned_department?.name || '—')}</div>
+              <div class="col-md-3"><b>Начало:</b> ${externalDate(d.start_date)}</div>
+              <div class="col-md-3"><b>Окончание:</b> ${externalDate(d.end_date)}</div>
+              <div class="col-md-3"><b>Сложность:</b> ${esc(d.complexity_level ?? '—')}</div>
+              <div class="col-md-3"><b>Комментарий статуса:</b> ${esc(d.status_comment || '—')}</div>
+              <div class="col-12"><b>Описание:</b><div class="mt-1" style="white-space:pre-wrap">${esc(d.description || '—')}</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-6"><div class="border rounded p-3 h-100"><h6>Журнал действий</h6><div id="externalTaskLogs">${logsHtml}</div>
+          <div class="input-group mt-3"><input id="externalTaskLogText" class="form-control" placeholder="Новая запись в журнал"><button id="externalTaskLogAdd" class="btn btn-outline-primary" type="button">Добавить</button></div>
+        </div></div>
+        <div class="col-lg-6"><div class="border rounded p-3 h-100"><h6>История изменений</h6>${historyHtml}</div></div>
+        <div class="col-lg-6"><div class="border rounded p-3 h-100"><h6>Документы внешней задачи</h6>${documentsHtml}</div></div>
+        <div class="col-lg-6"><div class="border rounded p-3 h-100"><h6>Дополнительные значения</h6>${extrasHtml}</div></div>
+        <div class="col-lg-6"><div class="border rounded p-3 h-100"><h6>Связанные письма</h6>${lettersHtml}</div></div>
+        <div class="col-lg-6"><div class="border rounded p-3 h-100"><h6>План</h6>${planHtml}</div></div>
+      </div>`;
+    box.classList.remove('d-none');
+    document.getElementById('externalTaskLogAdd')?.addEventListener('click', addExternalTaskLog);
+  }
+
+  async function loadExternalTaskDetails() {
+    if (!currentTaskId) return;
+    const box = document.getElementById('taskExternalCrmDetails');
+    const btn = document.getElementById('loadTaskExternalCrm');
+    if (btn) btn.disabled = true;
+    if (box) {
+      box.classList.remove('d-none');
+      box.innerHTML = '<div class="text-muted small">Получение полной карточки из внешней CRM...</div>';
+    }
+    try {
+      const r = await json(`/ajax/external-crm/tasks/${currentTaskId}/details`);
+      renderExternalTaskDetails(r.data || {});
+    } catch (e) {
+      if (box) box.innerHTML = '<div class="alert alert-warning mb-0">'+esc(e.message)+'</div>';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function addExternalTaskLog() {
+    if (!currentTaskId) return;
+    const input = document.getElementById('externalTaskLogText');
+    const text = input?.value.trim();
+    if (!text) return;
+    const btn = document.getElementById('externalTaskLogAdd');
+    if (btn) btn.disabled = true;
+    try {
+      await json(`/ajax/external-crm/tasks/${currentTaskId}/logs`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({text})
+      });
+      if (input) input.value = '';
+      await loadExternalTaskDetails();
+    } catch (e) {
+      alert(e.message);
     } finally {
       if (btn) btn.disabled = false;
     }
