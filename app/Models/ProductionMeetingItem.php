@@ -9,12 +9,13 @@ class ProductionMeetingItem extends Model
 {
     protected $fillable = [
         'production_meeting_id','number','instruction','responsible_department_id','coexecutor_id',
-        'start_at','due_at','duration_days','status','task_id','created_by',
+        'start_at','due_at','duration_days','status','task_id','task_created_from_meeting','created_by',
     ];
 
     protected $casts = [
         'start_at' => 'date',
         'due_at' => 'date',
+        'task_created_from_meeting' => 'boolean',
     ];
 
     public function meeting(): BelongsTo { return $this->belongsTo(ProductionMeeting::class, 'production_meeting_id'); }
