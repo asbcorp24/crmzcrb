@@ -645,6 +645,37 @@
         if (data.responsible_department?.name) parts.push(`<span class="badge text-bg-light border"><i class="bi bi-building me-1"></i>${esc(data.responsible_department.name)}</span>`);
         if (data.business_status?.name) parts.push(`<span class="badge border" style="background:${esc(data.business_status.color || '#f8f9fa')};color:#212529">${esc(data.business_status.name)}</span>`);
         summary.innerHTML = parts.join('');
+
+        let external = card.querySelector(`[data-task-external-summary="${id}"]`);
+        if (data.external_crm_task_id) {
+          if (!external) {
+            external = document.createElement('div');
+            external.dataset.taskExternalSummary = String(id);
+            external.className = 'small mt-2 border rounded px-2 py-2 bg-light';
+            summary.insertAdjacentElement('afterend', external);
+          }
+          const statusNames = {
+            in_progress:'В работе',
+            done:'Выполнено',
+            not_done:'Не выполнено',
+            postponed:'Перенесено',
+            cancelled:'Отменено'
+          };
+          const remoteStatus = statusNames[data.external_crm_remote_status] || data.external_crm_remote_status || 'неизвестен';
+          const logWhen = data.external_crm_last_log_at ? new Date(data.external_crm_last_log_at).toLocaleString('ru-RU') : '';
+          external.innerHTML =
+            '<div class="d-flex flex-wrap gap-2 align-items-center">'
+            + '<span class="fw-semibold"><i class="bi bi-arrow-left-right me-1"></i>Внешняя CRM #' + esc(data.external_crm_task_id) + '</span>'
+            + '<span><i class="bi bi-person me-1"></i>' + esc(data.external_crm_recipient_name || 'Получатель не определён') + '</span>'
+            + '<span class="badge text-bg-secondary">' + esc(remoteStatus) + '</span>'
+            + '</div>'
+            + '<div class="mt-1 text-break"><i class="bi bi-journal-text me-1"></i>'
+            + esc(data.external_crm_last_log || 'Журнал действий пока пуст')
+            + (logWhen ? ' <span class="text-muted ms-1">' + esc(logWhen) + '</span>' : '')
+            + '</div>';
+        } else if (external) {
+          external.remove();
+        }
       });
     } catch (_) {}
   }
