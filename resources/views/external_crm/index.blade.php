@@ -47,7 +47,7 @@
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white">
         <b>Сопоставление отделов</b>
-        <div class="small text-muted">Наш отдел = удалённый цех. Задача будет отправляться начальнику выбранного цеха.</div>
+        <div class="small text-muted">Наш отдел = удалённый цех. Получателя задачи можно выбрать отдельно; начальник цеха подставляется автоматически, если он назначен во внешней CRM.</div>
       </div>
       <div class="card-body p-0">
         @if(!$tokenConfigured || !$baseUrl)
@@ -59,7 +59,7 @@
             @csrf @method('PATCH')
             <div class="table-responsive">
               <table class="table align-middle mb-0">
-                <thead><tr><th>Наш отдел</th><th>Удалённый цех</th><th>Начальник</th><th>Тип задачи</th><th>Состояние</th></tr></thead>
+                <thead><tr><th>Наш отдел</th><th>Удалённый цех</th><th>Получатель / начальник</th><th>Тип задачи</th><th>Состояние</th></tr></thead>
                 <tbody>
                 @forelse($departments as $department)
                   @php $mapping = $mappings->get($department->id); @endphp
@@ -75,7 +75,17 @@
                         @endforeach
                       </select>
                     </td>
-                    <td style="min-width:220px"><span class="manager-name" data-row="{{ $department->id }}">{{ $mapping->external_manager_name ?? '—' }}</span></td>
+                    <td style="min-width:280px">
+                      <select class="form-select manager-select" name="mappings[{{ $department->id }}][manager_user_id]" data-row="{{ $department->id }}">
+                        <option value="">Выберите получателя...</option>
+                        @foreach($remoteUsers as $remoteUser)
+                          <option value="{{ $remoteUser['id'] }}" @selected((int)($mapping->external_manager_user_id ?? 0)===(int)$remoteUser['id'])>
+                            {{ $remoteUser['full_name'] ?? ('Пользователь #'.$remoteUser['id']) }}@if(!empty($remoteUser['department']['name'])) — {{ $remoteUser['department']['name'] }}@endif
+                          </option>
+                        @endforeach
+                      </select>
+                      <div class="form-text manager-hint" data-row="{{ $department->id }}"></div>
+                    </td>
                     <td style="min-width:240px">
                       <select class="form-select" name="mappings[{{ $department->id }}][task_type_id]">
                         <option value="">Выберите тип...</option>
@@ -113,14 +123,34 @@
 @push('scripts')
 <script>
 document.querySelectorAll('.workshop-select').forEach(select=>{
-  const update=()=>{
+  const update=(force=false)=>{
     const option=select.options[select.selectedIndex];
     const row=select.dataset.row;
-    const target=document.querySelector('.manager-name[data-row="'+row+'"]');
-    if(target) target.textContent=option?.dataset.managerName||'—';
+    const managerSelect=document.querySelector('.manager-select[data-row="'+row+'"]');
+    const hint=document.querySelector('.manager-hint[data-row="'+row+'"]');
+    const managerId=option?.dataset.managerId||'';
+    const managerName=option?.dataset.managerName||'';
+
+    if(hint){
+      hint.textContent=managerId
+        ? 'Начальник цеха во внешней CRM: '+managerName
+        : 'У цеха начальник не назначен — выберите получателя вручную.';
+    }
+
+    if(managerSelect && managerId && (force || !managerSelect.value)){
+      const exists=[...managerSelect.options].some(x=>x.value===String(managerId));
+      if(exists) managerSelect.value=String(managerId);
+    }
+
+    if(managerSelect && !select.value){
+      managerSelect.value='';
+      managerSelect.disabled=true;
+    }else if(managerSelect){
+      managerSelect.disabled=false;
+    }
   };
-  select.addEventListener('change',update);
-  update();
+  select.addEventListener('change',()=>update(true));
+  update(false);
 });
 
 document.getElementById('testExternalCrm')?.addEventListener('click',async function(){
@@ -138,7 +168,7 @@ document.getElementById('testExternalCrm')?.addEventListener('click',async funct
     });
     const data=await response.json();
     if(!response.ok) throw new Error(data.message||'Ошибка подключения');
-    state.innerHTML='<span class="text-success"><i class="bi bi-check-circle me-1"></i>Соединение установлено. Цехов: '+data.workshops_count+', типов задач: '+data.task_types_count+'</span>';
+    state.innerHTML='<span class="text-success"><i class="bi bi-check-circle me-1"></i>Соединение установлено. Цехов: '+data.workshops_count+', пользователей: '+(data.users_count??0)+', типов задач: '+data.task_types_count+'</span>';
   }catch(e){
     state.innerHTML='<span class="text-danger"><i class="bi bi-x-circle me-1"></i>'+String(e.message||e)+'</span>';
   }finally{this.disabled=false}
