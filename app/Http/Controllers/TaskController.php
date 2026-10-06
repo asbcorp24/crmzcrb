@@ -289,6 +289,8 @@ class TaskController extends Controller
                     ? $row['latest_log']
                     : null;
 
+                $oldStatus = $task->status;
+                $oldDueAt = $task->due_at?->copy();
                 $remoteStatus = (string)($row['status'] ?? '');
                 $update = [
                     'external_crm_remote_status' => $remoteStatus ?: null,
@@ -354,6 +356,34 @@ class TaskController extends Controller
                 }
 
                 DB::table('tasks')->where('id', $task->id)->update($update);
+                $fresh = $task->fresh();
+
+                $messages = [];
+                if ($oldStatus !== $fresh->status) {
+                    $messages[] = 'статус '.$oldStatus.' → '.$fresh->status;
+                }
+
+                if (($oldDueAt?->timestamp) !== ($fresh->due_at?->timestamp)) {
+                    TaskDeadlineChange::create([
+                        'task_id' => $task->id,
+                        'user_id' => $request->user()->id,
+                        'old_due_at' => $oldDueAt,
+                        'new_due_at' => $fresh->due_at,
+                        'reason' => 'Автосинхронизация при отображении списка задач',
+                    ]);
+                    $messages[] = 'обновлён срок из внешней CRM';
+                }
+
+                if ($messages) {
+                    TaskEvent::create([
+                        'task_id' => $task->id,
+                        'user_id' => $request->user()->id,
+                        'type' => 'external_crm_list_sync',
+                        'from_status' => $oldStatus,
+                        'to_status' => $fresh->status,
+                        'message' => 'При отображении списка получены изменения из внешней CRM: '.implode('; ', $messages),
+                    ]);
+                }
             }
         } catch (\Throwable $e) {
             foreach ($linked as $task) {
