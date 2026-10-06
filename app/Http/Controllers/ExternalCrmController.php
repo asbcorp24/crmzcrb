@@ -288,6 +288,13 @@ class ExternalCrmController extends Controller
             ], 422);
         }
 
+        $remoteOwner = collect($crm->users($organization))->first(function ($row) use ($mapping) {
+            return (int)($row['id'] ?? 0) === (int)$mapping->external_manager_user_id;
+        });
+        $remoteDepartmentId = is_array($remoteOwner)
+            ? (int)($remoteOwner['department']['id'] ?? 0)
+            : 0;
+
         $project = $this->referenceForTask($task, 'project', $task->project_id);
         $basis = $this->referenceForTask($task, 'basis', $task->basis_id);
         $businessStatus = $this->referenceForTask($task, 'task_status', $task->business_status_id);
@@ -333,6 +340,7 @@ class ExternalCrmController extends Controller
             'status_comment' => $businessStatus?->name,
             'type_id' => (int)$mapping->external_task_type_id,
             'owner_id' => (int)$mapping->external_manager_user_id,
+            'assigned_department_id' => $remoteDepartmentId ?: null,
             'start_date' => ($task->start_at ?: $task->created_at ?: now())->toIso8601String(),
             'end_date' => $task->due_at?->toIso8601String(),
             'priority' => $this->externalPriority($task->priority),
