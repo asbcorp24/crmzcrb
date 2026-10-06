@@ -58,6 +58,26 @@ class ExternalCrmService
         return $this->send($organization, 'PATCH', '/api/crm/v1/tasks/'.$externalTaskId, $payload);
     }
 
+    public function taskSummaries(Organization $organization, array $externalTaskIds): array
+    {
+        $ids = collect($externalTaskIds)
+            ->map(fn ($id) => (int)$id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (!$ids) {
+            return [];
+        }
+
+        $response = $this->get($organization, '/api/crm/v1/tasks/summaries', [
+            'ids' => implode(',', $ids),
+        ]);
+
+        return isset($response['data']) && is_array($response['data']) ? $response['data'] : [];
+    }
+
     public function taskDetails(Organization $organization, int $externalTaskId): array
     {
         return $this->get($organization, '/api/crm/v1/tasks/'.$externalTaskId);
