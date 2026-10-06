@@ -35,6 +35,7 @@ class ExternalCrmController extends Controller
             ->keyBy('department_id');
 
         $workshops = [];
+        $remoteUsers = [];
         $taskTypes = [];
         $remoteError = null;
         $health = null;
@@ -43,6 +44,7 @@ class ExternalCrmController extends Controller
             try {
                 $health = $crm->health($organization);
                 $workshops = $crm->workshops($organization);
+                $remoteUsers = $crm->users($organization);
                 $taskTypes = $crm->taskTypes($organization);
             } catch (\Throwable $e) {
                 $remoteError = $e->getMessage();
@@ -56,6 +58,7 @@ class ExternalCrmController extends Controller
             'departments' => $departments,
             'mappings' => $mappings,
             'workshops' => $workshops,
+            'remoteUsers' => $remoteUsers,
             'taskTypes' => $taskTypes,
             'remoteError' => $remoteError,
             'health' => $health,
@@ -102,6 +105,7 @@ class ExternalCrmController extends Controller
                 'ok' => true,
                 'health' => $crm->health($organization),
                 'workshops_count' => count($crm->workshops($organization)),
+                'users_count' => count($crm->users($organization)),
                 'task_types_count' => count($crm->taskTypes($organization)),
             ]);
         } catch (\Throwable $e) {
@@ -119,6 +123,7 @@ class ExternalCrmController extends Controller
         $data = $request->validate([
             'mappings' => 'nullable|array',
             'mappings.*.workshop_id' => 'nullable|integer|min:1',
+            'mappings.*.manager_user_id' => 'nullable|integer|min:1',
             'mappings.*.task_type_id' => 'nullable|integer|min:1',
         ]);
 
@@ -126,6 +131,7 @@ class ExternalCrmController extends Controller
 
         try {
             $workshops = collect($crm->workshops($organization))->keyBy(fn ($row) => (int)($row['id'] ?? 0));
+            $remoteUsers = collect($crm->users($organization))->keyBy(fn ($row) => (int)($row['id'] ?? 0));
             $taskTypes = collect($crm->taskTypes($organization))->keyBy(fn ($row) => (int)($row['id'] ?? 0));
         } catch (\Throwable $e) {
             throw ValidationException::withMessages(['connection' => $e->getMessage()]);
@@ -144,6 +150,7 @@ class ExternalCrmController extends Controller
             }
 
             $workshopId = !empty($row['workshop_id']) ? (int)$row['workshop_id'] : null;
+            $managerUserId = !empty($row['manager_user_id']) ? (int)$row['manager_user_id'] : null;
             $taskTypeId = !empty($row['task_type_id']) ? (int)$row['task_type_id'] : null;
 
             if (!$workshopId) {
@@ -175,10 +182,20 @@ class ExternalCrmController extends Controller
                 ]);
             }
 
-            $manager = isset($workshop['manager']) && is_array($workshop['manager']) ? $workshop['manager'] : null;
-            if (!$manager || empty($manager['id'])) {
+            if (!$managerUserId && isset($workshop['manager']) && is_array($workshop['manager'])) {
+                $managerUserId = !empty($workshop['manager']['id']) ? (int)$workshop['manager']['id'] : null;
+            }
+
+            if (!$managerUserId) {
                 throw ValidationException::withMessages([
-                    'mappings.'.$departmentId.'.workshop_id' => 'У выбранного цеха во внешней CRM не назначен начальник.',
+                    'mappings.'.$departmentId.'.manager_user_id' => 'Выберите получателя задачи во внешней CRM.',
+                ]);
+            }
+
+            $manager = $remoteUsers->get($managerUserId);
+            if (!$manager) {
+                throw ValidationException::withMessages([
+                    'mappings.'.$departmentId.'.manager_user_id' => 'Выбранный получатель не найден среди активных пользователей внешней CRM.',
                 ]);
             }
 
@@ -190,7 +207,7 @@ class ExternalCrmController extends Controller
                 [
                     'external_workshop_id' => $workshopId,
                     'external_workshop_name' => $workshop['name'] ?? null,
-                    'external_manager_user_id' => (int)$manager['id'],
+                    'external_manager_user_id' => $managerUserId,
                     'external_manager_name' => $manager['full_name'] ?? null,
                     'external_task_type_id' => $taskTypeId,
                     'external_task_type_name' => $taskType['name'] ?? null,
