@@ -284,6 +284,33 @@ class ExternalCrmController extends Controller
         }
     }
 
+    public function downloadTaskDocument(Request $request, Task $task, int $documentId, ExternalCrmService $crm)
+    {
+        $this->authorizeTaskSync($request, $task);
+
+        if (!$task->external_crm_task_id) {
+            abort(404);
+        }
+
+        $organization = Organization::findOrFail($task->organization_id);
+
+        try {
+            $file = $crm->downloadTaskDocument(
+                $organization,
+                (int)$task->external_crm_task_id,
+                $documentId
+            );
+
+            return response($file['body'], 200, [
+                'Content-Type' => $file['content_type'] ?: 'application/octet-stream',
+                'Content-Disposition' => 'attachment; filename*=UTF-8\'\''.rawurlencode($file['filename']),
+                'Cache-Control' => 'private, no-store',
+            ]);
+        } catch (\Throwable $e) {
+            abort(422, $e->getMessage());
+        }
+    }
+
     public function addTaskLog(Request $request, Task $task, ExternalCrmService $crm)
     {
         $this->authorizeTaskSync($request, $task);
