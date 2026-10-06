@@ -73,6 +73,80 @@ class ExternalCrmService
         return $this->send($organization, 'POST', '/api/crm/v1/tasks/'.$externalTaskId.'/logs', $payload);
     }
 
+    public function downloadTaskDocument(Organization $organization, int $externalTaskId, int $documentId): array
+    {
+        if (!function_exists('curl_init')) {
+            throw new RuntimeException('На сервере PHP не включено расширение cURL.');
+        }
+
+        $settings = $organization->settings ?: [];
+        $encrypted = (string)($settings['external_crm_token'] ?? '');
+        if ($encrypted === '') {
+            throw new RuntimeException('API-токен внешней CRM не настроен.');
+        }
+
+        try {
+            $token = Crypt::decryptString($encrypted);
+        } catch (\Throwable $e) {
+            throw new RuntimeException('Не удалось расшифровать API-токен внешней CRM.');
+        }
+
+        $headers = [];
+        $ch = curl_init($this->url(
+            $organization,
+            '/api/crm/v1/tasks/'.$externalTaskId.'/documents/'.$documentId.'/download'
+        ));
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_HTTPHEADER => [
+                'Accept: application/octet-stream, application/json',
+                'Authorization: Bearer '.$token,
+            ],
+            CURLOPT_HEADERFUNCTION => function ($curl, string $header) use (&$headers): int {
+                $len = strlen($header);
+                $parts = explode(':', $header, 2);
+                if (count($parts) === 2) {
+                    $headers[strtolower(trim($parts[0]))] = trim($parts[1]);
+                }
+                return $len;
+            },
+        ]);
+
+        $body = curl_exec($ch);
+        if ($body === false) {
+            $error = curl_error($ch);
+            curl_close($ch);
+            throw new RuntimeException('Ошибка загрузки документа из внешней CRM: '.$error);
+        }
+
+        $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $contentType = (string)(curl_getinfo($ch, CURLINFO_CONTENT_TYPE) ?: 'application/octet-stream');
+        curl_close($ch);
+
+        if ($status < 200 || $status >= 300) {
+            $json = json_decode((string)$body, true);
+            $message = is_array($json) ? ($json['message'] ?? $json['error'] ?? '') : '';
+            throw new RuntimeException('Внешняя CRM: '.($message ?: 'HTTP '.$status));
+        }
+
+        $filename = 'document-'.$documentId;
+        $disposition = $headers['content-disposition'] ?? '';
+        if (preg_match('/filename\*=UTF-8\'\'([^;]+)/i', $disposition, $m)) {
+            $filename = rawurldecode($m[1]);
+        } elseif (preg_match('/filename="?([^";]+)"?/i', $disposition, $m)) {
+            $filename = $m[1];
+        }
+
+        return [
+            'body' => (string)$body,
+            'content_type' => $contentType,
+            'filename' => $filename,
+        ];
+    }
+
     public function get(Organization $organization, string $path, array $query = []): array
     {
         $url = $this->url($organization, $path);
