@@ -11,6 +11,7 @@ class Kernel extends ConsoleKernel
     {
         $schedule->command('crm:deadlines')->dailyAt('08:00')->withoutOverlapping();
         $schedule->command('crm:recurring-tasks')->hourly()->withoutOverlapping();
+        $schedule->command('crm:sync-external-tasks')->everyTenMinutes()->withoutOverlapping();
     }
 
     protected function commands(): void
