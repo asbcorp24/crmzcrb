@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Meeting;
 use App\Models\Plan;
 use App\Models\Task;
+use App\Models\TaskEvent;
 use App\Models\User;
 use App\Services\AccessService;
 use Illuminate\Http\Request;
@@ -23,8 +24,15 @@ class ArchiveController extends Controller
 
     public function store(Request $request,string $type,int $id)
     {
-        abort_unless($request->user()->isManager(),403); $m=$this->resolve($type,$id); $this->authorizeArchiveAccess($request,$type,$m);
-        if($type==='task') abort_unless(in_array($m->status,['completed','cancelled'],true),422,'Сначала завершите или отмените задачу');
+        $m=$this->resolve($type,$id);
+        $this->authorizeArchiveAccess($request,$type,$m);
+
+        if($type==='task') {
+            abort_unless(in_array($m->status,['completed','cancelled'],true),422,'Сначала завершите или отмените задачу');
+        } else {
+            abort_unless($request->user()->isManager(),403);
+        }
+
         if($type==='plan') abort_unless(in_array($m->status,['completed','cancelled'],true),422,'В архив можно отправить только выполненный или отменённый план');
         if($type==='meeting') abort_unless($m->status==='closed',422,'Сначала закройте протокол совещания');
         if($type==='user') {
@@ -32,15 +40,71 @@ class ArchiveController extends Controller
             if(!$request->user()->isAdmin()) abort_if($m->isAdmin(),403,'Архивировать администратора может только администратор');
             $m->is_active=false;
         }
-        $m->archived_at=now(); $m->archived_by=$request->user()->id; $m->save(); return response()->json(['ok'=>true]);
+
+        $m->archived_at=now();
+        $m->archived_by=$request->user()->id;
+        $m->save();
+
+        if($type==='task') {
+            TaskEvent::create([
+                'task_id'=>$m->id,
+                'user_id'=>$request->user()->id,
+                'type'=>'archived',
+                'from_status'=>$m->status,
+                'to_status'=>$m->status,
+                'message'=>'Задача отправлена в архив',
+            ]);
+        }
+
+        return response()->json(['ok'=>true]);
     }
 
     public function restore(Request $request,string $type,int $id)
     {
-        abort_unless($request->user()->isManager(),403); $m=$this->resolve($type,$id); $this->authorizeArchiveAccess($request,$type,$m);
-        $m->archived_at=null; $m->archived_by=null; if($type==='user')$m->is_active=true; $m->save(); return response()->json(['ok'=>true]);
+        $m=$this->resolve($type,$id);
+        $this->authorizeArchiveAccess($request,$type,$m);
+
+        if($type!=='task') {
+            abort_unless($request->user()->isManager(),403);
+        }
+
+        $m->archived_at=null;
+        $m->archived_by=null;
+        if($type==='user')$m->is_active=true;
+        $m->save();
+
+        if($type==='task') {
+            TaskEvent::create([
+                'task_id'=>$m->id,
+                'user_id'=>$request->user()->id,
+                'type'=>'restored',
+                'from_status'=>$m->status,
+                'to_status'=>$m->status,
+                'message'=>'Задача восстановлена из архива',
+            ]);
+        }
+
+        return response()->json(['ok'=>true]);
     }
 
     private function resolve(string $type,int $id){return match($type){'task'=>Task::findOrFail($id),'plan'=>Plan::findOrFail($id),'meeting'=>Meeting::findOrFail($id),'user'=>User::findOrFail($id),default=>abort(404)};}
-    private function authorizeArchiveAccess(Request $r,string $type,$m):void{$u=$r->user();if($u->isAdmin())return;$ids=app(AccessService::class)->userIds($u,true);$ok=match($type){'task'=>$m->created_by===$u->id||$ids->contains((int)$m->assigned_to),'plan'=>$m->created_by===$u->id||$ids->contains((int)$m->user_id),'meeting'=>$m->created_by===$u->id||$ids->contains((int)$m->created_by),'user'=>app(AccessService::class)->canManageUser($u,$m),default=>false};abort_unless($ok,403);}
+    private function authorizeArchiveAccess(Request $r,string $type,$m):void
+    {
+        $u=$r->user();
+        if($u->isAdmin()) return;
+
+        if($type==='task' && (int)$m->created_by===(int)$u->id) return;
+
+        abort_unless($u->isManager(),403);
+
+        $ids=app(AccessService::class)->userIds($u,true);
+        $ok=match($type){
+            'task'=>$ids->contains((int)$m->assigned_to) || (int)$m->created_by===(int)$u->id,
+            'plan'=>(int)$m->created_by===(int)$u->id || $ids->contains((int)$m->user_id),
+            'meeting'=>(int)$m->created_by===(int)$u->id || $ids->contains((int)$m->created_by),
+            'user'=>app(AccessService::class)->canManageUser($u,$m),
+            default=>false
+        };
+        abort_unless($ok,403);
+    }
 }
