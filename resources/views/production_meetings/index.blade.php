@@ -30,7 +30,7 @@
             </div>
 
             <div class="card border-0 shadow-sm">
-                <div class="card-header bg-white d-flex flex-wrap gap-2 align-items-center"><div><b>Мероприятия</b><div class="small text-muted">Каждый пункт протокола связан с отдельной задачей.</div></div><button class="btn btn-primary btn-sm ms-auto" onclick="newItem()"><i class="bi bi-plus-lg me-1"></i>Добавить мероприятие</button></div>
+                <div class="card-header bg-white d-flex flex-wrap gap-2 align-items-center"><div><b>Мероприятия</b><div class="small text-muted">Можно создать новое мероприятие или выбрать уже существующую задачу CRM.</div></div><div class="ms-auto d-flex gap-2 flex-wrap"><button class="btn btn-outline-primary btn-sm" onclick="openExistingTaskModal()"><i class="bi bi-link-45deg me-1"></i>Выбрать существующую</button><button class="btn btn-primary btn-sm" onclick="newItem()"><i class="bi bi-plus-lg me-1"></i>Добавить мероприятие</button></div></div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                         <thead><tr><th style="width:55px">№</th><th>Мероприятие, задача</th><th>Ответственный отдел</th><th>Соисполнитель</th><th>Начало</th><th>Окончание</th><th>Дней</th><th>Статус</th><th style="width:90px"></th></tr></thead>
@@ -58,6 +58,26 @@
     <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Отмена</button><button class="btn btn-primary">Сохранить</button></div>
 </form></div></div>
 
+<div class="modal fade" id="existingTaskModal" tabindex="-1"><div class="modal-dialog modal-xl"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Выбрать существующую задачу</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="input-group mb-3">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input id="existingTaskSearch" class="form-control" placeholder="Поиск по названию или ID задачи">
+            <button type="button" class="btn btn-outline-secondary" onclick="loadExistingTasks()">Найти</button>
+        </div>
+        <div class="small text-muted mb-3">Показываются доступные вам незархивированные задачи, которые ещё не добавлены в производственное совещание.</div>
+        <div id="existingTaskError" class="alert alert-danger d-none"></div>
+        <div class="table-responsive border rounded">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th style="width:80px">ID</th><th>Задача</th><th>Исполнитель</th><th>Отдел</th><th>Срок</th><th>Статус</th><th style="width:110px"></th></tr></thead>
+                <tbody id="existingTaskRows"><tr><td colspan="7" class="text-center text-muted py-4">Введите запрос или загрузите последние задачи.</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Закрыть</button></div>
+</div></div></div>
+
 <div class="modal fade" id="itemModal" tabindex="-1"><div class="modal-dialog modal-lg"><form id="itemForm" class="modal-content">
     <div class="modal-header"><h5 class="modal-title">Мероприятие протокола</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
     <div class="modal-body"><input type="hidden" id="itemId">
@@ -82,6 +102,7 @@ let currentMeeting=null;
 let meetingRows=[];
 const meetingModal=bootstrap.Modal.getOrCreateInstance(document.getElementById('meetingModal'));
 const itemModal=bootstrap.Modal.getOrCreateInstance(document.getElementById('itemModal'));
+const existingTaskModal=bootstrap.Modal.getOrCreateInstance(document.getElementById('existingTaskModal'));
 
 function esc(v){return $('<div>').text(v??'').html()}
 function fmtDate(v){if(!v)return'—';return new Date(v).toLocaleDateString('ru-RU')}
@@ -120,7 +141,7 @@ function loadMeetingsOnly(){
 }
 function renderItems(items){
     let h='';
-    items.forEach(i=>{const task=i.task?`<a href="{{ route('tasks.page') }}?task=${i.task.id}" class="small text-decoration-none d-block mt-1">Задача #${i.task.id} · ${statusName(i.task.status)}</a>`:'';h+=`<tr><td class="fw-bold">${i.number}</td><td style="min-width:260px">${esc(i.instruction)}${task}</td><td>${esc(i.department?.short_name||i.department?.name||'—')}</td><td>${esc(fullName(i.coexecutor))}</td><td>${fmtDate(i.start_at)}</td><td>${fmtDate(i.due_at)}</td><td>${i.duration_days??'—'}</td><td><span class="badge text-bg-${statusBadge(i.status)}">${statusName(i.status)}</span></td><td><div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" onclick="editItem(${i.id})"><i class="bi bi-pencil"></i></button><button class="btn btn-outline-danger" onclick="deleteItem(${i.id})"><i class="bi bi-trash"></i></button></div></td></tr>`});
+    items.forEach(i=>{const task=i.task?`<a href="{{ route('tasks.page') }}?task=${i.task.id}" class="small text-decoration-none d-block mt-1">Задача #${i.task.id} · ${statusName(i.task.status)}</a>`:'';const source=i.task_id?(i.task_created_from_meeting?'<span class="badge text-bg-light border ms-1">создана протоколом</span>':'<span class="badge text-bg-info-subtle border ms-1">существующая</span>'):'';h+=`<tr><td class="fw-bold">${i.number}</td><td style="min-width:260px">${esc(i.instruction)}${source}${task}</td><td>${esc(i.department?.short_name||i.department?.name||'—')}</td><td>${esc(fullName(i.coexecutor))}</td><td>${fmtDate(i.start_at)}</td><td>${fmtDate(i.due_at)}</td><td>${i.duration_days??'—'}</td><td><span class="badge text-bg-${statusBadge(i.status)}">${statusName(i.status)}</span></td><td><div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" onclick="editItem(${i.id})"><i class="bi bi-pencil"></i></button><button class="btn btn-outline-danger" onclick="deleteItem(${i.id})"><i class="bi bi-trash"></i></button></div></td></tr>`});
     $('#itemsBody').html(h||'<tr><td colspan="9" class="text-center text-muted py-4">Мероприятия ещё не добавлены.</td></tr>');
 }
 
@@ -132,11 +153,47 @@ function editMeeting(){
 }
 $('#meetingForm').on('submit',function(e){e.preventDefault();const id=$('#meetingId').val();$.ajax({url:id?`{{ url('/ajax/production-meetings') }}/${id}`:'{{ route('production-meetings.store') }}',method:id?'PATCH':'POST',data:$(this).serialize()}).done(r=>{meetingModal.hide();currentMeeting=r.meeting;loadMeetings(r.meeting.id)}).fail(x=>$('#meetingError').removeClass('d-none').text(x.responseJSON?.message||'Ошибка сохранения'))});
 
+function openExistingTaskModal(){
+    if(!currentMeeting)return;
+    $('#existingTaskSearch').val('');
+    $('#existingTaskError').addClass('d-none').text('');
+    existingTaskModal.show();
+    loadExistingTasks();
+    setTimeout(()=>$('#existingTaskSearch').trigger('focus'),150);
+}
+function loadExistingTasks(){
+    const q=$('#existingTaskSearch').val().trim();
+    $('#existingTaskRows').html('<tr><td colspan="7" class="text-center text-muted py-4">Загрузка...</td></tr>');
+    $('#existingTaskError').addClass('d-none').text('');
+    $.get('{{ route('production-meetings.task-options') }}',{q}).done(rows=>{
+        let h='';
+        (rows||[]).forEach(t=>{
+            const dep=t.assignee?.department?.short_name||t.assignee?.department?.name||'—';
+            const assignee=t.assignee?.full_name||'—';
+            h+=`<tr><td>#${t.id}</td><td><div class="fw-semibold">${esc(t.title||'Задача')}</div><div class="small text-muted">${esc(t.priority||'')}</div></td><td>${esc(assignee)}</td><td>${esc(dep)}</td><td>${fmtDate(t.due_at)}</td><td><span class="badge text-bg-${statusBadge(t.status)}">${esc(statusName(t.status))}</span></td><td class="text-end"><button type="button" class="btn btn-sm btn-primary" onclick="attachExistingTask(${t.id})"><i class="bi bi-link-45deg me-1"></i>Выбрать</button></td></tr>`;
+        });
+        $('#existingTaskRows').html(h||'<tr><td colspan="7" class="text-center text-muted py-4">Подходящих задач не найдено.</td></tr>');
+    }).fail(x=>{
+        $('#existingTaskRows').html('<tr><td colspan="7" class="text-center text-muted py-4">Ошибка загрузки.</td></tr>');
+        $('#existingTaskError').removeClass('d-none').text(x.responseJSON?.message||'Не удалось загрузить задачи.');
+    });
+}
+function attachExistingTask(taskId){
+    if(!currentMeeting)return;
+    $('#existingTaskError').addClass('d-none').text('');
+    $.post(`{{ url('/ajax/production-meetings') }}/${currentMeeting.id}/items/attach-task`,{task_id:taskId})
+        .done(()=>{existingTaskModal.hide();openMeeting(currentMeeting.id)})
+        .fail(x=>$('#existingTaskError').removeClass('d-none').text(x.responseJSON?.message||'Не удалось добавить существующую задачу.'));
+}
+let existingTaskSearchTimer;
+$('#existingTaskSearch').on('input',function(){clearTimeout(existingTaskSearchTimer);existingTaskSearchTimer=setTimeout(loadExistingTasks,300)});
+$('#existingTaskSearch').on('keydown',function(e){if(e.key==='Enter'){e.preventDefault();loadExistingTasks()}});
+
 function newItem(){if(!currentMeeting)return;$('#itemId').val('');document.getElementById('itemForm').reset();$('#itemError').addClass('d-none');itemModal.show()}
 function editItem(id){if(!currentMeeting)return;const i=(currentMeeting.items||[]).find(x=>x.id===id);if(!i)return;$('#itemId').val(i.id);const f=document.getElementById('itemForm');f.instruction.value=i.instruction||'';f.responsible_department_id.value=i.responsible_department_id||'';f.coexecutor_id.value=i.coexecutor_id||'';f.start_at.value=i.start_at?String(i.start_at).substring(0,10):'';f.due_at.value=i.due_at?String(i.due_at).substring(0,10):'';f.status.value=i.status||'pending';$('#itemError').addClass('d-none');itemModal.show()}
 $('#itemDepartment').on('change',function(){const head=departmentHeads[String(this.value)];if(head)$('#itemCoexecutor').val(String(head))});
 $('#itemForm').on('submit',function(e){e.preventDefault();if(!currentMeeting)return;const id=$('#itemId').val();$.ajax({url:id?`{{ url('/ajax/production-meetings') }}/${currentMeeting.id}/items/${id}`:`{{ url('/ajax/production-meetings') }}/${currentMeeting.id}/items`,method:id?'PATCH':'POST',data:$(this).serialize()}).done(()=>{itemModal.hide();openMeeting(currentMeeting.id)}).fail(x=>$('#itemError').removeClass('d-none').text(x.responseJSON?.message||'Ошибка сохранения мероприятия'))});
-function deleteItem(id){if(!currentMeeting||!confirm('Удалить мероприятие из протокола? Связанная незавершённая задача будет отменена.'))return;$.ajax({url:`{{ url('/ajax/production-meetings') }}/${currentMeeting.id}/items/${id}`,method:'DELETE'}).done(()=>openMeeting(currentMeeting.id)).fail(x=>alert(x.responseJSON?.message||'Ошибка удаления'))}
+function deleteItem(id){if(!currentMeeting)return;const item=(currentMeeting.items||[]).find(x=>x.id===id);const msg=item?.task_id&&item?.task_created_from_meeting?'Удалить мероприятие из протокола? Созданная протоколом незавершённая задача будет отменена.':'Удалить мероприятие из протокола? Существующая связанная задача останется без изменений.';if(!confirm(msg))return;$.ajax({url:`{{ url('/ajax/production-meetings') }}/${currentMeeting.id}/items/${id}`,method:'DELETE'}).done(()=>openMeeting(currentMeeting.id)).fail(x=>alert(x.responseJSON?.message||'Ошибка удаления'))}
 function generateProtocol(){if(!currentMeeting)return;if(!confirm(currentMeeting.status==='protocol'?'Обновить протокол и синхронизировать связанные задачи?':'Сформировать протокол и создать задачи по всем мероприятиям?'))return;$.post(`{{ url('/ajax/production-meetings') }}/${currentMeeting.id}/generate-protocol`).done(()=>{openMeeting(currentMeeting.id);alert('Протокол сформирован. Задачи созданы/синхронизированы.')}).fail(x=>alert(x.responseJSON?.message||'Не удалось сформировать протокол'))}
 
 loadMeetings();
