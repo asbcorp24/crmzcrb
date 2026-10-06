@@ -58,6 +58,21 @@ class ExternalCrmService
         return $this->send($organization, 'PATCH', '/api/crm/v1/tasks/'.$externalTaskId, $payload);
     }
 
+    public function taskDetails(Organization $organization, int $externalTaskId): array
+    {
+        return $this->get($organization, '/api/crm/v1/tasks/'.$externalTaskId);
+    }
+
+    public function taskLogs(Organization $organization, int $externalTaskId): array
+    {
+        return $this->get($organization, '/api/crm/v1/tasks/'.$externalTaskId.'/logs');
+    }
+
+    public function addTaskLog(Organization $organization, int $externalTaskId, array $payload): array
+    {
+        return $this->send($organization, 'POST', '/api/crm/v1/tasks/'.$externalTaskId.'/logs', $payload);
+    }
+
     public function get(Organization $organization, string $path, array $query = []): array
     {
         $url = $this->url($organization, $path);
