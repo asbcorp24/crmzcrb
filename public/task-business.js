@@ -512,7 +512,7 @@
           const statusNode = document.getElementById('detailStatus');
           const dueNode = document.getElementById('detailDueAt');
           const resultNode = document.getElementById('detailResult');
-          if (statusNode && r.task?.status) statusNode.textContent = statusName?.(r.task.status) || r.task.status;
+          if (statusNode && r.task?.status) { const names={new:'Новая',in_progress:'В работе',review:'На проверке',completed:'Выполнена',cancelled:'Отменена'}; statusNode.textContent = names[r.task.status] || r.task.status; }
           if (dueNode && r.task?.due_at) dueNode.textContent = new Date(r.task.due_at).toLocaleString('ru-RU');
           if (resultNode && r.task?.result != null) resultNode.textContent = r.task.result || '—';
         }
