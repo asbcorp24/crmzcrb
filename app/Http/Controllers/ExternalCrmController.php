@@ -307,8 +307,11 @@ class ExternalCrmController extends Controller
                 $update['start_at'] = \Carbon\Carbon::parse($data['start_date']);
             }
 
-            if (array_key_exists('end_date', $data)) {
-                $newDueAt = !empty($data['end_date']) ? \Carbon\Carbon::parse($data['end_date']) : null;
+            if (array_key_exists('end_date', $data) || array_key_exists('postponed_to', $data)) {
+                $remoteDue = ($remoteStatus === 'postponed' && !empty($data['postponed_to']))
+                    ? $data['postponed_to']
+                    : ($data['end_date'] ?? null);
+                $newDueAt = !empty($remoteDue) ? \Carbon\Carbon::parse($remoteDue) : null;
                 $update['due_at'] = $newDueAt;
 
                 $oldTs = $oldDueAt?->timestamp;
@@ -391,7 +394,7 @@ class ExternalCrmController extends Controller
 
     public function taskDetails(Request $request, Task $task, ExternalCrmService $crm)
     {
-        $this->authorizeTaskSync($request, $task);
+        $this->authorizeTaskRead($request, $task);
 
         if (!$task->external_crm_task_id) {
             return response()->json([
@@ -419,7 +422,7 @@ class ExternalCrmController extends Controller
 
     public function downloadTaskDocument(Request $request, Task $task, int $documentId, ExternalCrmService $crm)
     {
-        $this->authorizeTaskSync($request, $task);
+        $this->authorizeTaskRead($request, $task);
 
         if (!$task->external_crm_task_id) {
             abort(404);
@@ -446,7 +449,7 @@ class ExternalCrmController extends Controller
 
     public function addTaskLog(Request $request, Task $task, ExternalCrmService $crm)
     {
-        $this->authorizeTaskSync($request, $task);
+        $this->authorizeTaskRead($request, $task);
 
         if (!$task->external_crm_task_id) {
             return response()->json([
