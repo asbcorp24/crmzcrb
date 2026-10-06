@@ -256,6 +256,73 @@ class ExternalCrmController extends Controller
         }
     }
 
+    public function taskDetails(Request $request, Task $task, ExternalCrmService $crm)
+    {
+        $this->authorizeTaskSync($request, $task);
+
+        if (!$task->external_crm_task_id) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Задача ещё не связана с внешней CRM.',
+            ], 422);
+        }
+
+        $organization = Organization::findOrFail($task->organization_id);
+
+        try {
+            $remote = $crm->taskDetails($organization, (int)$task->external_crm_task_id);
+
+            return response()->json([
+                'ok' => true,
+                'data' => isset($remote['data']) && is_array($remote['data']) ? $remote['data'] : [],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function addTaskLog(Request $request, Task $task, ExternalCrmService $crm)
+    {
+        $this->authorizeTaskSync($request, $task);
+
+        if (!$task->external_crm_task_id) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Задача ещё не связана с внешней CRM.',
+            ], 422);
+        }
+
+        $data = $request->validate([
+            'text' => 'required|string|max:10000',
+            'parent_id' => 'nullable|integer|min:1',
+            'is_done' => 'nullable|boolean',
+        ]);
+
+        $organization = Organization::findOrFail($task->organization_id);
+
+        try {
+            $remote = $crm->addTaskLog($organization, (int)$task->external_crm_task_id, [
+                'text' => trim($data['text']),
+                'parent_id' => $data['parent_id'] ?? null,
+                'is_done' => !empty($data['is_done']),
+                'entry_date' => now()->toIso8601String(),
+            ]);
+
+            return response()->json([
+                'ok' => true,
+                'data' => isset($remote['data']) && is_array($remote['data']) ? $remote['data'] : [],
+            ], 201);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
     public function syncTask(Request $request, Task $task, ExternalCrmService $crm)
     {
         $this->authorizeTaskSync($request, $task);
