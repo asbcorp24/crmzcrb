@@ -9,6 +9,7 @@ use App\Models\ReferenceItem;
 use App\Models\Task;
 use App\Models\TaskLink;
 use App\Models\TaskEvent;
+use App\Models\TaskDeadlineChange;
 use App\Services\AccessService;
 use App\Services\ExternalCrmService;
 use Illuminate\Http\Request;
@@ -249,6 +250,138 @@ class ExternalCrmController extends Controller
                 'data' => isset($remote['data']) && is_array($remote['data']) ? $remote['data'] : [],
             ]);
         } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function pullTask(Request $request, Task $task, ExternalCrmService $crm)
+    {
+        $this->authorizeTaskRead($request, $task);
+
+        if (!$task->external_crm_task_id) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Задача ещё не связана с внешней CRM.',
+            ], 422);
+        }
+
+        $organization = Organization::findOrFail($task->organization_id);
+
+        try {
+            $remote = $crm->taskDetails($organization, (int)$task->external_crm_task_id);
+            $data = isset($remote['data']) && is_array($remote['data']) ? $remote['data'] : [];
+
+            $oldStatus = $task->status;
+            $oldDueAt = $task->due_at?->copy();
+            $remoteStatus = (string)($data['status'] ?? '');
+            $localStatus = $this->localStatusFromExternal($remoteStatus, $task->status);
+
+            $update = [
+                'external_crm_remote_status' => $remoteStatus ?: null,
+                'external_crm_pulled_at' => now(),
+                'external_crm_sync_error' => null,
+                'updated_at' => now(),
+            ];
+
+            if ($localStatus !== '') {
+                $update['status'] = $localStatus;
+                if ($localStatus === 'completed') {
+                    $update['progress'] = 100;
+                    $update['completed_at'] = $task->completed_at ?: now();
+                    $update['started_at'] = $task->started_at ?: now();
+                } elseif ($localStatus === 'cancelled') {
+                    $update['completed_at'] = null;
+                } elseif (in_array($localStatus, ['new','in_progress'], true)) {
+                    $update['completed_at'] = null;
+                    if ($localStatus === 'in_progress') {
+                        $update['started_at'] = $task->started_at ?: now();
+                        if ((int)$task->progress === 0) $update['progress'] = 1;
+                    }
+                }
+            }
+
+            if (array_key_exists('start_date', $data) && !empty($data['start_date'])) {
+                $update['start_at'] = \Carbon\Carbon::parse($data['start_date']);
+            }
+
+            if (array_key_exists('end_date', $data)) {
+                $newDueAt = !empty($data['end_date']) ? \Carbon\Carbon::parse($data['end_date']) : null;
+                $update['due_at'] = $newDueAt;
+
+                $oldTs = $oldDueAt?->timestamp;
+                $newTs = $newDueAt?->timestamp;
+                if ($oldTs !== $newTs) {
+                    TaskDeadlineChange::create([
+                        'task_id' => $task->id,
+                        'user_id' => $request->user()->id,
+                        'old_due_at' => $oldDueAt,
+                        'new_due_at' => $newDueAt,
+                        'reason' => 'Синхронизация с внешней CRM',
+                    ]);
+                }
+            }
+
+            $resultParts = [];
+            foreach ([
+                'decision' => 'Решение',
+                'status_comment' => 'Комментарий',
+                'approve_comment' => 'Комментарий утверждения',
+            ] as $key => $label) {
+                $value = trim((string)($data[$key] ?? ''));
+                if ($value !== '') $resultParts[] = $label.': '.$value;
+            }
+            if (!empty($resultParts)) {
+                $update['result'] = implode("\n", array_unique($resultParts));
+            }
+
+            DB::table('tasks')->where('id', $task->id)->update($update);
+            $fresh = $task->fresh();
+
+            $changes = [];
+            if ($oldStatus !== $fresh->status) {
+                $changes[] = 'статус '.$oldStatus.' → '.$fresh->status;
+            }
+            if (($oldDueAt?->timestamp) !== ($fresh->due_at?->timestamp)) {
+                $changes[] = 'срок '.($oldDueAt?->format('d.m.Y H:i') ?? 'не задан').
+                    ' → '.($fresh->due_at?->format('d.m.Y H:i') ?? 'не задан');
+            }
+            if (isset($update['result'])) $changes[] = 'обновлён результат';
+
+            TaskEvent::create([
+                'task_id' => $task->id,
+                'user_id' => $request->user()->id,
+                'type' => 'external_crm_pulled',
+                'from_status' => $oldStatus,
+                'to_status' => $fresh->status,
+                'message' => 'Получены изменения из внешней CRM #'.$task->external_crm_task_id.
+                    ($changes ? ': '.implode('; ', $changes) : ': изменений реквизитов исполнения нет'),
+            ]);
+
+            return response()->json([
+                'ok' => true,
+                'task' => [
+                    'id' => $fresh->id,
+                    'status' => $fresh->status,
+                    'progress' => $fresh->progress,
+                    'start_at' => $fresh->start_at,
+                    'due_at' => $fresh->due_at,
+                    'result' => $fresh->result,
+                    'completed_at' => $fresh->completed_at,
+                    'external_crm_remote_status' => $fresh->external_crm_remote_status,
+                    'external_crm_pulled_at' => $fresh->external_crm_pulled_at,
+                ],
+                'remote' => $data,
+                'changes' => $changes,
+            ]);
+        } catch (\Throwable $e) {
+            DB::table('tasks')->where('id', $task->id)->update([
+                'external_crm_sync_error' => mb_substr($e->getMessage(), 0, 5000),
+                'updated_at' => now(),
+            ]);
+
             return response()->json([
                 'ok' => false,
                 'message' => $e->getMessage(),
@@ -502,6 +635,36 @@ class ExternalCrmController extends Controller
                 'message' => $e->getMessage(),
             ], 422);
         }
+    }
+
+    private function authorizeTaskRead(Request $request, Task $task): void
+    {
+        abort_unless((int)$task->organization_id === (int)$request->user()->organization_id, 404);
+
+        $user = $request->user();
+        if ($user->isAdmin() || (int)$task->created_by === (int)$user->id || (int)$task->assigned_to === (int)$user->id) {
+            return;
+        }
+
+        if ($user->isManager()) {
+            $assignee = $task->assignee()->first();
+            if ($assignee && app(AccessService::class)->canManageUser($user, $assignee)) {
+                return;
+            }
+        }
+
+        abort(403);
+    }
+
+    private function localStatusFromExternal(string $status, string $current): string
+    {
+        return [
+            'in_progress' => $current === 'new' ? 'in_progress' : ($current === 'review' ? 'review' : 'in_progress'),
+            'done' => 'completed',
+            'not_done' => 'in_progress',
+            'postponed' => 'in_progress',
+            'cancelled' => 'cancelled',
+        ][$status] ?? $current;
     }
 
     private function authorizeTaskSync(Request $request, Task $task): void
