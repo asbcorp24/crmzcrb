@@ -279,8 +279,17 @@ class ExternalCrmController extends Controller
             $remoteStatus = (string)($data['status'] ?? '');
             $localStatus = $this->localStatusFromExternal($remoteStatus, $task->status);
 
+            $logs = isset($data['logs']) && is_array($data['logs']) ? $data['logs'] : [];
+            usort($logs, function ($a, $b) {
+                return strcmp((string)($a['entry_date'] ?? ''), (string)($b['entry_date'] ?? ''));
+            });
+            $lastLog = $logs ? end($logs) : null;
+
             $update = [
                 'external_crm_remote_status' => $remoteStatus ?: null,
+                'external_crm_recipient_name' => $data['owner']['full_name'] ?? $task->external_crm_recipient_name,
+                'external_crm_last_log' => is_array($lastLog) ? ($lastLog['text'] ?? $task->external_crm_last_log) : $task->external_crm_last_log,
+                'external_crm_last_log_at' => is_array($lastLog) && !empty($lastLog['entry_date']) ? \Carbon\Carbon::parse($lastLog['entry_date']) : $task->external_crm_last_log_at,
                 'external_crm_pulled_at' => now(),
                 'external_crm_sync_error' => null,
                 'updated_at' => now(),
@@ -589,9 +598,16 @@ class ExternalCrmController extends Controller
                 throw new \RuntimeException('Внешняя CRM не вернула ID задачи.');
             }
 
+            $remoteStatus = (string)($remoteTask['status'] ?? $this->externalStatus($task->status));
+            $recipientName = $mapping->external_manager_name ?: ('Пользователь #'.$mapping->external_manager_user_id);
+
             DB::table('tasks')->where('id', $task->id)->update([
                 'external_crm_task_id' => $externalId,
                 'external_crm_sync_status' => 'synced',
+                'external_crm_remote_status' => $remoteStatus ?: null,
+                'external_crm_recipient_name' => $recipientName,
+                'external_crm_last_log' => 'Передано во внешнюю CRM: '.$recipientName,
+                'external_crm_last_log_at' => now(),
                 'external_crm_sync_error' => null,
                 'external_crm_synced_at' => now(),
                 'updated_at' => now(),
