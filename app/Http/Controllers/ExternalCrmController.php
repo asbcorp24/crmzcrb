@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Department;
 use App\Models\ExternalCrmDepartmentMapping;
 use App\Models\Organization;
+use App\Models\ReferenceItem;
 use App\Models\Task;
+use App\Models\TaskLink;
 use App\Models\TaskEvent;
 use App\Services\AccessService;
 use App\Services\ExternalCrmService;
@@ -286,9 +288,49 @@ class ExternalCrmController extends Controller
             ], 422);
         }
 
+        $project = $this->referenceForTask($task, 'project', $task->project_id);
+        $basis = $this->referenceForTask($task, 'basis', $task->basis_id);
+        $businessStatus = $this->referenceForTask($task, 'task_status', $task->business_status_id);
+        $responsibleDepartment = $task->responsible_department_id
+            ? Department::withoutGlobalScope('organization')->whereKey($task->responsible_department_id)->first(['id','name','short_name'])
+            : null;
+        $customerName = $this->customerName($task);
+        $links = TaskLink::where('task_id', $task->id)->orderBy('id')->get(['title','url']);
+        $localTaskUrl = route('tasks.page', ['task' => $task->id]);
+
+        $descriptionParts = [];
+        if (trim((string)$task->description) !== '') {
+            $descriptionParts[] = trim((string)$task->description);
+        }
+
+        $details = [];
+        if ($project) $details[] = 'Проект: '.$project->name;
+        if ($basis) $details[] = 'Основание: '.$basis->name;
+        if ($customerName) $details[] = 'Заказчик: '.$customerName;
+        if ($responsibleDepartment) {
+            $details[] = 'Ответственный отдел: '.($responsibleDepartment->short_name ?: $responsibleDepartment->name);
+        }
+        if ($businessStatus) $details[] = 'Статус CRM: '.$businessStatus->name;
+        $details[] = 'Исходная задача CRM: #'.$task->id;
+        $details[] = 'Ссылка на задачу: '.$localTaskUrl;
+
+        if ($links->isNotEmpty()) {
+            $details[] = 'Ссылки:';
+            foreach ($links as $link) {
+                $details[] = '- '.(trim((string)$link->title) !== '' ? $link->title.': ' : '').$link->url;
+            }
+        }
+
+        if (!empty($details)) {
+            $descriptionParts[] = implode("\n", $details);
+        }
+
         $payload = [
             'title' => trim((string)$task->title) ?: 'Задача',
-            'description' => $task->description,
+            'description' => implode("\n\n", $descriptionParts) ?: null,
+            'direction' => $project?->name,
+            'outgoing_document' => $basis?->name,
+            'status_comment' => $businessStatus?->name,
             'type_id' => (int)$mapping->external_task_type_id,
             'owner_id' => (int)$mapping->external_manager_user_id,
             'start_date' => ($task->start_at ?: $task->created_at ?: now())->toIso8601String(),
@@ -377,6 +419,41 @@ class ExternalCrmController extends Controller
         }
 
         abort(403);
+    }
+
+    private function referenceForTask(Task $task, string $type, $id): ?ReferenceItem
+    {
+        if (!$id) return null;
+
+        return ReferenceItem::withoutGlobalScope('organization')
+            ->where('organization_id', $task->organization_id)
+            ->whereKey((int)$id)
+            ->where('type', $type)
+            ->first();
+    }
+
+    private function customerName(Task $task): ?string
+    {
+        if (!$task->customer_type || !$task->customer_id) return null;
+
+        if ($task->customer_type === 'organization') {
+            return ReferenceItem::withoutGlobalScope('organization')
+                ->where('organization_id', $task->organization_id)
+                ->whereKey((int)$task->customer_id)
+                ->where('type', 'organization')
+                ->value('name');
+        }
+
+        if ($task->customer_type === 'department') {
+            $department = Department::withoutGlobalScope('organization')
+                ->where('organization_id', $task->organization_id)
+                ->whereKey((int)$task->customer_id)
+                ->first(['name','short_name']);
+
+            return $department ? ($department->short_name ?: $department->name) : null;
+        }
+
+        return null;
     }
 
     private function externalPriority(?string $priority): int
