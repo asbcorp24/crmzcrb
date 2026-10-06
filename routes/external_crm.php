@@ -12,4 +12,5 @@ Route::middleware('auth')->group(function () {
     Route::post('/ajax/external-crm/tasks/{task}/sync', [ExternalCrmController::class, 'syncTask'])->name('external-crm.tasks.sync');
     Route::get('/ajax/external-crm/tasks/{task}/details', [ExternalCrmController::class, 'taskDetails'])->name('external-crm.tasks.details');
     Route::post('/ajax/external-crm/tasks/{task}/logs', [ExternalCrmController::class, 'addTaskLog'])->name('external-crm.tasks.logs.store');
+    Route::get('/ajax/external-crm/tasks/{task}/documents/{documentId}/download', [ExternalCrmController::class, 'downloadTaskDocument'])->name('external-crm.tasks.documents.download');
 });
