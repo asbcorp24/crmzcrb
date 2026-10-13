@@ -35,6 +35,8 @@ Route::middleware('auth')->group(function(){
 
         Route::get('/users',[AdminController::class,'users'])->name('users');
         Route::post('/users',[AdminController::class,'storeUser'])->name('users.store');
+        Route::post('/users/bulk',[AdminController::class,'bulkUsers'])->name('users.bulk');
+        Route::get('/users/credentials.csv',[AdminController::class,'credentialsCsv'])->name('users.credentials');
         Route::patch('/users/{user}',[AdminController::class,'updateUser'])->name('users.update');
         Route::post('/users/{user}/password',[AdminController::class,'resetPassword'])->name('users.password');
 
