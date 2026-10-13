@@ -15,10 +15,15 @@ class AttemptController extends Controller
     {
         $user=$request->user();
         $this->assertAvailable($test,$user->workshop_id);
-        $count=Attempt::where('test_id',$test->id)->where('user_id',$user->id)->where('status','submitted')->count();
+        $attempt=Attempt::where('test_id',$test->id)->where('user_id',$user->id)->where('status','in_progress')->latest('id')->first();
+        if($attempt && $test->time_limit_minutes && $attempt->started_at && now()->gt($attempt->started_at->copy()->addMinutes($test->time_limit_minutes))){
+            $attempt->update(['status'=>'expired','submitted_at'=>now()]);
+            $attempt=null;
+        }
+
+        $count=Attempt::where('test_id',$test->id)->where('user_id',$user->id)->whereIn('status',['submitted','expired'])->count();
         abort_if($count >= $test->attempts_limit,422,'Лимит попыток исчерпан.');
 
-        $attempt=Attempt::where('test_id',$test->id)->where('user_id',$user->id)->where('status','in_progress')->latest('id')->first();
         if(!$attempt){
             $attempt=Attempt::create([
                 'test_id'=>$test->id,'user_id'=>$user->id,'workshop_id'=>$user->workshop_id,
@@ -37,8 +42,9 @@ class AttemptController extends Controller
         abort_unless($attempt->status==='in_progress',422,'Попытка уже завершена.');
         $this->assertAvailable($test,$user->workshop_id);
 
-        if($test->time_limit_minutes && $attempt->started_at){
-            abort_if(now()->gt($attempt->started_at->copy()->addMinutes($test->time_limit_minutes)),422,'Время прохождения истекло.');
+        if($test->time_limit_minutes && $attempt->started_at && now()->gt($attempt->started_at->copy()->addMinutes($test->time_limit_minutes))){
+            $attempt->update(['status'=>'expired','submitted_at'=>now()]);
+            abort(422,'Время прохождения истекло. Попытка завершена.');
         }
 
         $test->load('questions.options');
