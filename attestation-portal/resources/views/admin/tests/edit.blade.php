@@ -50,6 +50,24 @@
               </div>
             @endif
             @if($q->type==='scale')<div class="small text-muted mt-2">Шкала {{ $q->scale_min }}–{{ $q->scale_max }}</div>@endif
+            <details class="mt-3">
+              <summary class="small text-info">Редактировать вопрос</summary>
+              <form method="post" action="{{ route('admin.tests.questions.update',[$test,$q]) }}" class="mt-3">
+                @csrf @method('PATCH')
+                <div class="mb-2"><input name="section" class="form-control" value="{{ $q->section }}" placeholder="Раздел"></div>
+                <div class="mb-2"><textarea name="text" class="form-control" rows="3" required>{{ $q->text }}</textarea></div>
+                <div class="row g-2">
+                  <div class="col-6"><select name="type" class="form-select">@foreach(['single'=>'Один вариант','multiple'=>'Несколько','scale'=>'Шкала','text'=>'Текст'] as $v=>$l)<option value="{{ $v }}" @selected($q->type===$v)>{{ $l }}</option>@endforeach</select></div>
+                  <div class="col-3"><input name="weight" type="number" step=".1" min="0" class="form-control" value="{{ $q->weight }}"></div>
+                  <div class="col-3 d-flex align-items-center"><div class="form-check"><input name="required" value="1" class="form-check-input" type="checkbox" @checked($q->required)><label class="small">обяз.</label></div></div>
+                </div>
+                <div class="row g-2 mt-1"><div class="col-6"><input name="scale_min" type="number" class="form-control" value="{{ $q->scale_min ?? 1 }}"></div><div class="col-6"><input name="scale_max" type="number" class="form-control" value="{{ $q->scale_max ?? 4 }}"></div></div>
+                <div class="form-check my-2"><input name="peer_field" value="1" type="checkbox" class="form-check-input" @checked($q->peer_field)><label class="form-check-label">Поле коллег</label></div>
+                <textarea name="options_text" rows="4" class="form-control mb-2">@foreach($q->options as $o){{ $o->value }}|{{ $o->label }}@if(!$loop->last){{ "\n" }}@endif @endforeach</textarea>
+                <input name="correct_values" class="form-control mb-2" value="{{ $q->options->where('is_correct',true)->pluck('value')->join(',') }}" placeholder="Правильные значения">
+                <button class="btn btn-sm btn-outline-primary">Сохранить вопрос</button>
+              </form>
+            </details>
           </div>
         @empty
           <div class="text-muted">Вопросов пока нет.</div>
