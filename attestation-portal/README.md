@@ -96,13 +96,33 @@
 
     http://127.0.0.1:8085
 
-## OpenServer
+## OpenServer — размещение внутри crmzcrb
 
-Для отдельного домена укажите DocumentRoot:
+Портал можно хранить прямо здесь:
 
-    .../crmzcrb/attestation-portal/public
+    C:\OpenServer\domains\crmzcrb\attestation-portal
 
-Не указывайте корень `attestation-portal` — веб-сервер должен смотреть именно в `public`.
+При этом открывать его нужно без /public:
+
+    http://crmzcrb/attestation-portal/login
+
+В корне attestation-portal уже есть .htaccess, который внутренне направляет запросы в public/, но наружу /public в URL не показывает.
+
+В .env портала должно быть:
+
+    APP_URL=http://crmzcrb/attestation-portal
+
+После изменения APP_URL:
+
+    php artisan optimize:clear
+    php artisan config:clear
+    php artisan view:clear
+
+Публичные CSS/JS находятся только в:
+
+    public/assets/
+
+Bootstrap, графики и используемые иконки подключаются локально, без CDN.
 
 ## Linux / хостинг
 
