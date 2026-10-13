@@ -1,4 +1,4 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Вход — Аттестация ЗЦРБ</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"><link href="{{ asset('css/app.css') }}" rel="stylesheet"></head>
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Вход — Аттестация ЗЦРБ</title><link href="{{ asset('assets/vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet"><link href="{{ asset('assets/css/app.css') }}" rel="stylesheet"></head>
 <body class="tech-grid d-flex align-items-center justify-content-center p-3"><div class="card border-0" style="width:min(440px,100%)"><div class="card-body p-4 p-lg-5">
 <div class="circuit-title mb-2">SYSTEM ACCESS</div><h2 class="mb-1">Аттестация ЗЦРБ</h2><div class="text-muted mb-4">Вход сотрудника в систему тестирования</div>
 @if($errors->any())<div class="alert alert-danger">{{ $errors->first() }}</div>@endif
