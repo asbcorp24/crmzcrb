@@ -43,6 +43,7 @@ Route::middleware('auth')->group(function(){
         Route::get('/tests/{test}/edit',[TestController::class,'edit'])->name('tests.edit');
         Route::patch('/tests/{test}',[TestController::class,'update'])->name('tests.update');
         Route::post('/tests/{test}/questions',[TestController::class,'addQuestion'])->name('tests.questions.store');
+        Route::patch('/tests/{test}/questions/{question}',[TestController::class,'updateQuestion'])->name('tests.questions.update');
         Route::delete('/tests/{test}/questions/{question}',[TestController::class,'deleteQuestion'])->name('tests.questions.destroy');
 
         Route::get('/attestation',[AttestationController::class,'admin'])->name('attestation');
