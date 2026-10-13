@@ -6,7 +6,7 @@ return [
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DATABASE_URL'),
-            'database' => env('DB_DATABASE', database_path('database.sqlite')),
+            'database' => ($db = env('DB_DATABASE')) ? ((str_starts_with($db, '/') || preg_match('/^[A-Za-z]:[\\\\\/]/', $db)) ? $db : base_path($db)) : database_path('database.sqlite'),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
         ],
