@@ -4,9 +4,9 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <title>@yield('title','Аттестация ЗЦРБ')</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.css" rel="stylesheet">
-<link href="{{ asset('css/app.css') }}" rel="stylesheet">
+<link href="{{ asset('assets/vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+<link href="{{ asset('assets/css/icons.css') }}" rel="stylesheet">
+<link href="{{ asset('assets/css/app.css') }}" rel="stylesheet">
 </head>
 <body class="tech-grid">
 <nav class="navbar navbar-expand-lg navbar-dark sticky-top"><div class="container-fluid px-3 px-lg-4">
@@ -31,6 +31,8 @@
 @if($errors->any())<div class="alert alert-danger"><b>Проверьте данные:</b><ul class="mb-0 mt-2">@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>@endif
 @yield('content')
 </main>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ asset('assets/vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+<script src="{{ asset('assets/js/app.js') }}"></script>
+<script src="{{ asset('assets/js/charts.js') }}"></script>
 @stack('scripts')
 </body></html>
