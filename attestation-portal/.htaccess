@@ -1,0 +1,18 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Не позволяем обращаться к служебным каталогам Laravel напрямую.
+    RewriteRule ^(?:app|bootstrap|config|database|resources|routes|storage|vendor)(?:/|$) - [F,L,NC]
+    RewriteRule ^(?:\.env|artisan|composer\.(?:json|lock)|README\.md)$ - [F,L,NC]
+
+    # Уже существующие публичные файлы отдаем из public/.
+    RewriteCond %{DOCUMENT_ROOT}/attestation-portal/public/$1 -f
+    RewriteRule ^(.+)$ public/$1 [L]
+
+    RewriteCond %{DOCUMENT_ROOT}/attestation-portal/public/$1 -d
+    RewriteRule ^(.+)$ public/$1 [L]
+
+    # Все остальные запросы Laravel получает через public/index.php.
+    RewriteRule ^$ public/index.php [L]
+    RewriteRule ^(.+)$ public/index.php [L,QSA]
+</IfModule>
