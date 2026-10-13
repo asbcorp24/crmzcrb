@@ -89,6 +89,70 @@ class AdminController extends Controller
         return back()->with('success','Сотрудник создан. Пароль: '.$password);
     }
 
+    public function bulkUsers(Request $request)
+    {
+        $data=$request->validate([
+            'workshop_id'=>'required|exists:workshops,id',
+            'people'=>'required|string',
+        ]);
+
+        $created=0;
+        $skipped=[];
+        foreach(preg_split('/\\r?\\n/',trim($data['people'])) as $line){
+            $line=trim($line); if($line==='') continue;
+            $parts=array_map('trim',explode('|',$line));
+            $fio=$parts[0]??'';
+            if($fio==='') continue;
+
+            $base=Str::slug($parts[1]??$fio,'');
+            if($base==='') $base='user';
+            $login=$parts[1]??$base;
+            $login=mb_strtolower(trim($login));
+            $candidate=$login; $n=1;
+            while(User::where('login',$candidate)->exists()) $candidate=$login.(++$n);
+            $login=$candidate;
+
+            $password=trim((string)($parts[2]??'')) ?: Str::upper(Str::random(4)).random_int(1000,9999);
+
+            $user=new User([
+                'workshop_id'=>$data['workshop_id'],
+                'full_name'=>$fio,
+                'login'=>$login,
+                'role'=>'employee',
+                'is_active'=>true,
+            ]);
+            $user->setVisiblePassword($password);
+            $user->save();
+            $created++;
+        }
+
+        return back()->with('success','Создано сотрудников: '.$created.'.');
+    }
+
+    public function credentialsCsv()
+    {
+        $users=User::with('workshop')->where('role','employee')->orderBy('workshop_id')->orderBy('full_name')->get();
+        $callback=function() use($users){
+            $out=fopen('php://output','w');
+            fwrite($out,"\\xEF\\xBB\\xBF");
+            fputcsv($out,['Цех','ФИО','Должность','Логин','Пароль'],';');
+            foreach($users as $user){
+                fputcsv($out,[
+                    $user->workshop?->name,
+                    $user->full_name,
+                    $user->position,
+                    $user->login,
+                    $user->visiblePassword(),
+                ],';');
+            }
+            fclose($out);
+        };
+
+        return response()->streamDownload($callback,'credentials-'.now()->format('Y-m-d-His').'.csv',[
+            'Content-Type'=>'text/csv; charset=UTF-8',
+        ]);
+    }
+
     public function updateUser(Request $request, User $user)
     {
         abort_if($user->isSuperAdmin(),422);
