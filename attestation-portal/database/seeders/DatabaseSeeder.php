@@ -17,5 +17,9 @@ class DatabaseSeeder extends Seeder
         $user->is_active=true;
         $user->setVisiblePassword($password);
         $user->save();
+
+        $this->call([
+            TechnologistGostAttestationSeeder::class,
+        ]);
     }
 }
