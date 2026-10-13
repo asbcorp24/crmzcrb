@@ -20,14 +20,13 @@
 <div class="col-12"><button class="btn btn-primary">Создать сотрудника</button></div></form></div></div>
 <div class="card"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>ФИО</th><th>Цех</th><th>Логин</th><th>Выданный пароль</th><th>Должность</th><th>Активен</th><th></th></tr></thead><tbody>
 @foreach($users as $u)<tr>
-<form method="post" action="{{ route('admin.users.update',$u) }}">@csrf @method('PATCH')
-<td><input name="full_name" class="form-control" value="{{ $u->full_name }}"></td>
-<td><select name="workshop_id" class="form-select">@foreach($workshops as $w)<option value="{{ $w->id }}" @selected($u->workshop_id==$w->id)>{{ $w->name }}</option>@endforeach</select></td>
-<td><input name="login" class="form-control" value="{{ $u->login }}"></td>
+<td><form id="user-{{ $u->id }}" method="post" action="{{ route('admin.users.update',$u) }}">@csrf @method('PATCH')</form><input form="user-{{ $u->id }}" name="full_name" class="form-control" value="{{ $u->full_name }}"></td>
+<td><select form="user-{{ $u->id }}" name="workshop_id" class="form-select">@foreach($workshops as $w)<option value="{{ $w->id }}" @selected($u->workshop_id==$w->id)>{{ $w->name }}</option>@endforeach</select></td>
+<td><input form="user-{{ $u->id }}" name="login" class="form-control" value="{{ $u->login }}"></td>
 <td><code class="text-info">{{ $passwords[$u->id] ?? 'недоступен' }}</code></td>
-<td><input name="position" class="form-control" value="{{ $u->position }}"></td>
-<td><input class="form-check-input" name="is_active" value="1" type="checkbox" @checked($u->is_active)></td>
-<td class="text-end"><button class="btn btn-sm btn-outline-primary">Сохранить</button></form>
+<td><input form="user-{{ $u->id }}" name="position" class="form-control" value="{{ $u->position }}"></td>
+<td><input form="user-{{ $u->id }}" class="form-check-input" name="is_active" value="1" type="checkbox" @checked($u->is_active)></td>
+<td class="text-end"><button form="user-{{ $u->id }}" class="btn btn-sm btn-outline-primary">Сохранить</button>
 <form method="post" action="{{ route('admin.users.password',$u) }}" class="d-inline">@csrf<button class="btn btn-sm btn-outline-warning" title="Сгенерировать новый пароль"><i class="bi bi-key"></i></button></form></td>
 </tr>@endforeach</tbody></table></div></div>
 <div class="mt-3">{{ $users->links() }}</div>
