@@ -61,12 +61,8 @@
 </form>
 
 @if($test->time_limit_minutes)
-@push('scripts')
-<script>
-const deadline = new Date(@json($attempt->started_at?->copy()->addMinutes($test->time_limit_minutes)->toIso8601String())).getTime();
-const badge=document.createElement('div');badge.className='position-fixed bottom-0 end-0 m-3 badge badge-tech p-3';document.body.appendChild(badge);
-setInterval(()=>{const s=Math.max(0,Math.floor((deadline-Date.now())/1000));badge.textContent='Осталось: '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0')},1000);
-</script>
-@endpush
+<div class="position-fixed bottom-0 end-0 m-3 badge badge-tech p-3"
+     data-countdown-deadline="{{ $attempt->started_at?->copy()->addMinutes($test->time_limit_minutes)->toIso8601String() }}">
+</div>
 @endif
 @endsection
