@@ -136,6 +136,57 @@ class TestController extends Controller
         return back()->with('success','Вопрос добавлен.');
     }
 
+    public function updateQuestion(Request $request, Test $test, Question $question)
+    {
+        abort_unless((int)$question->test_id===(int)$test->id,404);
+        $data=$request->validate([
+            'section'=>'nullable|string|max:255',
+            'text'=>'required|string|max:5000',
+            'type'=>['required',Rule::in(['single','multiple','scale','text'])],
+            'required'=>'nullable|boolean',
+            'weight'=>'nullable|numeric|min:0|max:1000',
+            'scale_min'=>'nullable|integer|min:0|max:100',
+            'scale_max'=>'nullable|integer|min:1|max:100',
+            'peer_field'=>'nullable|boolean',
+            'options_text'=>'nullable|string',
+            'correct_values'=>'nullable|string',
+        ]);
+
+        DB::transaction(function() use($data,$request,$question){
+            $question->update([
+                'section'=>$data['section']??null,
+                'text'=>$data['text'],
+                'type'=>$data['type'],
+                'required'=>$request->boolean('required'),
+                'weight'=>$data['weight']??1,
+                'scale_min'=>$data['type']==='scale'?($data['scale_min']??1):null,
+                'scale_max'=>$data['type']==='scale'?($data['scale_max']??4):null,
+                'peer_field'=>$request->boolean('peer_field'),
+            ]);
+
+            $question->options()->delete();
+            if(in_array($data['type'],['single','multiple'],true)){
+                $correct=collect(preg_split('/[,;\\n]+/',(string)($data['correct_values']??'')))
+                    ->map(fn($v)=>trim($v))->filter()->flip();
+                $lines=preg_split('/\\r?\\n/',trim((string)($data['options_text']??'')));
+                foreach($lines as $i=>$line){
+                    $line=trim($line); if($line==='') continue;
+                    [$value,$label]=array_pad(array_map('trim',explode('|',$line,2)),2,null);
+                    if($label===null){$label=$value;$value=(string)($i+1);}
+                    QuestionOption::create([
+                        'question_id'=>$question->id,
+                        'value'=>$value,'label'=>$label,
+                        'is_correct'=>$correct->has($value),
+                        'score'=>$correct->has($value)?($data['weight']??1):0,
+                        'sort_order'=>$i,
+                    ]);
+                }
+            }
+        });
+
+        return back()->with('success','Вопрос обновлён.');
+    }
+
     public function deleteQuestion(Test $test, Question $question)
     {
         abort_unless((int)$question->test_id===(int)$test->id,404);
