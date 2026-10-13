@@ -7,7 +7,9 @@
 </div>
 
 <div class="row g-3 mb-4">
-  <div class="col-xl-7"><div class="card h-100"><div class="card-header"><b>Количество прохождений</b></div><div class="card-body"><canvas id="overviewChart" height="110"></canvas></div></div></div>
+  <div class="col-xl-7"><div class="card h-100"><div class="card-header"><b>Количество прохождений</b></div><div class="card-body"><canvas id="overviewChart" height="220" data-tech-chart="bar"
+  data-labels="{{ e(json_encode($overview->pluck('title')->values())) }}"
+  data-datasets="{{ e(json_encode([['label'=>'Прохождений','data'=>$overview->pluck('attempts')->values()]])) }}"></canvas></div></div></div>
   <div class="col-xl-5"><div class="card h-100"><div class="card-header"><b>Сводка</b></div><div class="table-responsive"><table class="table mb-0"><thead><tr><th>Тест</th><th>Попыток</th><th>Средний %</th><th>Сдано</th></tr></thead><tbody>@foreach($overview as $r)<tr><td><a href="{{ route('admin.analytics',['test'=>$r['id']]) }}">{{ $r['title'] }}</a></td><td>{{ $r['attempts'] }}</td><td>{{ $r['avg_percent'] }}</td><td>{{ $r['passed'] }}</td></tr>@endforeach</tbody></table></div></div></div>
 </div>
 
@@ -16,7 +18,12 @@
   <div class="d-flex justify-content-between align-items-center mb-3"><div><div class="circuit-title">DETAIL #{{ $test->id }}</div><h2 class="h4 mb-0">{{ $test->title }}</h2></div><span class="badge badge-tech">{{ $test->kind }}</span></div>
 
   <div class="row g-3 mb-4">
-    <div class="col-xl-6"><div class="card h-100"><div class="card-header"><b>Охват по цехам</b></div><div class="card-body"><canvas id="workshopChart" height="140"></canvas></div></div></div>
+    <div class="col-xl-6"><div class="card h-100"><div class="card-header"><b>Охват по цехам</b></div><div class="card-body"><canvas id="workshopChart" height="260" data-tech-chart="bar"
+  data-labels="{{ e(json_encode(collect($detail['by_workshop'])->pluck('name')->values())) }}"
+  data-datasets="{{ e(json_encode([
+    ['label'=>'Прошли','data'=>collect($detail['by_workshop'])->pluck('submitted')->values()],
+    ['label'=>'Ожидалось','data'=>collect($detail['by_workshop'])->pluck('eligible')->values()]
+  ])) }}"></canvas></div></div></div>
     <div class="col-xl-6"><div class="card h-100"><div class="table-responsive"><table class="table mb-0"><thead><tr><th>Цех</th><th>Ожидалось</th><th>Прошли</th><th>Охват</th><th>Средний %</th></tr></thead><tbody>@foreach($detail['by_workshop'] as $r)<tr><td>{{ $r['name'] }}</td><td>{{ $r['eligible'] }}</td><td>{{ $r['submitted'] }}</td><td>{{ $r['percent'] }}%</td><td>{{ $r['avg'] }}</td></tr>@endforeach</tbody></table></div></div></div>
   </div>
 
@@ -46,15 +53,3 @@
 </div>
 @endif
 @endsection
-
-@push('scripts')
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script>
-const overview=@json($overview->values());
-new Chart(document.getElementById('overviewChart'),{type:'bar',data:{labels:overview.map(x=>x.title),datasets:[{label:'Прохождений',data:overview.map(x=>x.attempts)}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#9fb8c5'}},y:{beginAtZero:true,ticks:{color:'#9fb8c5'}}}}});
-@if($test && $detail)
-const workshop=@json($detail['by_workshop']);
-new Chart(document.getElementById('workshopChart'),{type:'bar',data:{labels:workshop.map(x=>x.name),datasets:[{label:'Прошли',data:workshop.map(x=>x.submitted)},{label:'Ожидалось',data:workshop.map(x=>x.eligible)}]},options:{responsive:true,scales:{x:{ticks:{color:'#9fb8c5'}},y:{beginAtZero:true,ticks:{color:'#9fb8c5'}}}}});
-@endif
-</script>
-@endpush
