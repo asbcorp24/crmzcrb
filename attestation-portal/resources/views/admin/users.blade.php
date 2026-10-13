@@ -2,7 +2,15 @@
 @section('title','Сотрудники')
 @section('content')
 <div class="d-flex flex-wrap justify-content-between gap-2 align-items-end mb-4"><div><div class="circuit-title">IDENTITY MATRIX</div><h1 class="h3 mb-0">Сотрудники и пароли</h1></div>
-<form class="d-flex gap-2"><input name="q" class="form-control" value="{{ request('q') }}" placeholder="ФИО / логин"><select name="workshop_id" class="form-select"><option value="">Все цеха</option>@foreach($workshops as $w)<option value="{{ $w->id }}" @selected(request('workshop_id')==$w->id)>{{ $w->name }}</option>@endforeach</select><button class="btn btn-outline-primary">Найти</button></form></div>
+<div class="d-flex gap-2 flex-wrap"><a class="btn btn-outline-primary" href="{{ route('admin.users.credentials') }}"><i class="bi bi-download me-1"></i>Выгрузить логины/пароли</a>
+<form class="d-flex gap-2"><input name="q" class="form-control" value="{{ request('q') }}" placeholder="ФИО / логин"><select name="workshop_id" class="form-select"><option value="">Все цеха</option>@foreach($workshops as $w)<option value="{{ $w->id }}" @selected(request('workshop_id')==$w->id)>{{ $w->name }}</option>@endforeach</select><button class="btn btn-outline-primary">Найти</button></form></div></div>
+<div class="card mb-4"><div class="card-header"><b>Массовое создание</b></div><div class="card-body">
+<form method="post" action="{{ route('admin.users.bulk') }}" class="row g-3">@csrf
+<div class="col-md-4"><label class="form-label">Цех</label><select name="workshop_id" class="form-select" required>@foreach($workshops as $w)<option value="{{ $w->id }}">{{ $w->name }}</option>@endforeach</select></div>
+<div class="col-md-8"><label class="form-label">Сотрудники</label><textarea name="people" class="form-control" rows="5" required placeholder="Иванов Иван Иванович&#10;Петров Петр Петрович|petrov|QWERTY123&#10;Сидоров Сидор Сидорович"></textarea><div class="form-text">Одна строка — один сотрудник. Формат: ФИО или ФИО|логин|пароль. Если логин/пароль не указаны — генерируются.</div></div>
+<div class="col-12"><button class="btn btn-outline-primary">Создать список сотрудников</button></div>
+</form></div></div>
+
 <div class="card mb-4"><div class="card-header"><b>Добавить сотрудника</b></div><div class="card-body"><form method="post" action="{{ route('admin.users.store') }}" class="row g-3">@csrf
 <div class="col-md-3"><label class="form-label">Цех</label><select name="workshop_id" class="form-select" required>@foreach($workshops as $w)<option value="{{ $w->id }}">{{ $w->name }}</option>@endforeach</select></div>
 <div class="col-md-3"><label class="form-label">ФИО</label><input name="full_name" class="form-control" required></div>
